@@ -1,1 +1,1 @@
-# random-spatial-network-planning
+# FiDiCoM

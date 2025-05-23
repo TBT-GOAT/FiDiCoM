@@ -327,7 +327,7 @@ class Net_FSLP {
          *************************************************/
         Net_2::vertex_descriptor search_nearest_demand(const Point_2 point) const;
 
-        //** Finalization Methods **//
+        //** Clear Methods **//
         /*************************************************
          * @brief 設定をクリアする（すべてのダミー頂点を削除する）
          * 

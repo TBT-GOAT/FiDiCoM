@@ -509,7 +509,7 @@ void Net_FSLP::initialize_main_buildings(const std::vector<Point_2> main_buildin
 
 }
 
-//** Finalization Methods **//
+//** Clear Methods **//
 void Net_FSLP::clear() {
     remove_dummy_vertices();
 }

@@ -204,7 +204,7 @@ void Net_WP::initialize_facilities(const size_t facility_num) {
 
 }
 
-//** Finalization Methods **//
+//** Clear Methods **//
 void Net_WP::clear() {
     remove_dummy_vertex();
 }

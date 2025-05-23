@@ -152,7 +152,7 @@ class Net_WP {
          *************************************************/
         void initialize_facilities(const size_t facility_num);
 
-        //** Finalization Methods **//
+        //** Clear Methods **//
         /*************************************************
          * @brief 設定をクリアする（ダミー頂点を削除する）
          * 

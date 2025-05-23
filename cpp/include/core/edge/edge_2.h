@@ -49,10 +49,10 @@ class Obstacle_2;
 
 class Edge_2 : public Segment_2{
     private:
-        std::vector<std::shared_ptr<Segment_2>> obstacle_ptrs;  // エッジと交差する障害物
-                                                                //! ひとつのエッジは複数の障害物と交差する可能性がある
+        
         std::shared_ptr<Node_2> source_ptr; // 始点
         std::shared_ptr<Node_2> target_ptr; // 終点
+        double length = -DBL_MAX;           // 長さ
         bool is_visible = true;             // 可視かどうか
         bool is_passable = true;            // 通過可能かどうか
         bool is_dummy = false;              // ダミーエッジかどうか
@@ -65,24 +65,29 @@ class Edge_2 : public Segment_2{
         //** Constructor **//
         Edge_2(std::shared_ptr<Node_2> source_ptr, std::shared_ptr<Node_2> target_ptr);
 
+        //** Destructor **//
+        virtual ~Edge_2() = default;
+
         //** Getter **//
         std::shared_ptr<Node_2> get_source_ptr() const;
         std::shared_ptr<Node_2> get_target_ptr() const;
+        double get_length() const;
         bool get_is_visible() const;
         bool get_is_passable() const;
         bool get_is_dummy() const;
         double get_weight_visibility() const;
-        double get_weight_passability() const;
+        virtual double get_weight_passability() const;
         std::unordered_set<std::shared_ptr<Obstacle_2>> get_x_obstacle_ptrs() const;
 
         //** Setter **//
         void set_source_ptr(const std::shared_ptr<Node_2> source_ptr);
         void set_target_ptr(const std::shared_ptr<Node_2> target_ptr);
+        void set_length(const double length);
         void set_is_visible(const bool is_visible);
         void set_is_passable(const bool is_passable);
         void set_is_dummy(const bool is_dummy);
         void set_weight_visibility(const double weight);
-        void set_weight_passability(const double weight);
+        virtual void set_weight_passability(const double weight);
         void set_x_obstacle_ptrs(std::unordered_set<std::shared_ptr<Obstacle_2>>&& x_obstacle_ptrs);
 
         //** Construction Method **//

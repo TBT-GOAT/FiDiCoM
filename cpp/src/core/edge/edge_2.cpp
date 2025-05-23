@@ -22,6 +22,10 @@ std::shared_ptr<Node_2> Edge_2::get_target_ptr() const {
     return target_ptr;
 }
 
+double Edge_2::get_length() const {
+    return length;
+}
+
 bool Edge_2::get_is_visible() const {
     return is_visible;
 }
@@ -53,6 +57,10 @@ void Edge_2::set_source_ptr(const std::shared_ptr<Node_2> source_ptr) {
 
 void Edge_2::set_target_ptr(const std::shared_ptr<Node_2> target_ptr) {
     this->target_ptr = target_ptr;
+}
+
+void Edge_2::set_length(const double length) {
+    this->length = length;
 }
 
 void Edge_2::set_is_visible(const bool is_visible) {
@@ -94,7 +102,12 @@ double Edge_2::calc_length() const {
     if (is_dummy) {
         return 0.0;
     }
+
+    if (length < 0) {
+        // 未計算
+        return std::sqrt(CGAL::squared_distance(*source_ptr, *target_ptr));
+    }
     
-    return std::sqrt(CGAL::squared_distance(*source_ptr, *target_ptr));
+    return get_length();
     
 }

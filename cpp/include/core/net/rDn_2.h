@@ -38,7 +38,7 @@
 typedef CGAL::Delaunay_triangulation_2<K> Delaunay_2;
 
 class rDn_2 : public Net_2 {
-    private:
+    protected:
         Delaunay_2 tessellation;
 
         //** Geometric Method **//

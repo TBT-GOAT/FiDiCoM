@@ -6,7 +6,7 @@ file(GLOB OBSTACLE_SRC
 add_library( core_obstacle STATIC ${OBSTACLE_SRC} )
                   
 target_include_directories( core_obstacle PUBLIC
-    ${CMAKE_SOURCE_DIR}/include/core/obstacle 
+    ${CMAKE_SOURCE_DIR}/include
 )
 
 target_link_libraries( core_obstacle PRIVATE 

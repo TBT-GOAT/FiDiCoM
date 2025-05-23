@@ -20,6 +20,12 @@
 #include "domain/flp/net_fslp.h"
 #include "domain/flp/fslp_SA.h"
 
+// include WTSN
+#include "domain/wtsn/pedestrian.h"
+#include "domain/wtsn/edge_2_wtsn.h"
+#include "domain/wtsn/rDn_2_wtsn.h"
+#include "domain/wtsn/simulator_wtsn.h"
+
 
 int main(int argc, char *argv[]) {
 
@@ -56,7 +62,7 @@ int main(int argc, char *argv[]) {
         
             // 障害物との交差判定
             std::cout << "disconnecting" << std::endl;
-            rdn_2.dissconnect_edges(obstacle_2_ptrs);
+            rdn_2.disconnect_edges(obstacle_2_ptrs);
         
             // ネットワークの書き出し
             std::string node_2_f_path {"/home/builder/workspace/data/nodes_2.cout"};
@@ -171,7 +177,7 @@ int main(int argc, char *argv[]) {
 
             // 障害物との交差判定
             std::cout << "disconnecting" << std::endl;
-            rdn_3.dissconnect_edges(obstacle_3_ptrs);    
+            rdn_3.disconnect_edges(obstacle_3_ptrs);    
 
             // ネットワークの書き出し
             std::string node_3_f_path {base_path+"nodes_3.cout"};
@@ -271,7 +277,7 @@ int main(int argc, char *argv[]) {
 
             // 障害物との交差判定
             std::cout << "disconnecting" << std::endl;
-            rdn_2_wp.dissconnect_edges(obstacle_2_wp_ptrs);
+            rdn_2_wp.disconnect_edges(obstacle_2_wp_ptrs);
 
             // ソルバの設定
             typedef std::vector<Net_2::vertex_descriptor> Facilities;
@@ -349,7 +355,7 @@ int main(int argc, char *argv[]) {
 
             // 障害物との交差判定
             std::cout << "disconnecting" << std::endl;
-            rdn_2_fslp.dissconnect_edges(obstacle_2_fslp_ptrs);
+            rdn_2_fslp.disconnect_edges(obstacle_2_fslp_ptrs);
 
             // ソルバの設定
             typedef std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> Facilities_Signs_Pair;
@@ -543,7 +549,7 @@ int main(int argc, char *argv[]) {
 
             // 障害物との交差判定
             std::cout << "disconnecting" << std::endl;
-            rdn_2_fslp.dissconnect_edges(obstacle_2_fslp_ptrs);
+            rdn_2_fslp.disconnect_edges(obstacle_2_fslp_ptrs);
 
             // ソルバの設定
             typedef std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> Facilities_Signs_Pair;
@@ -687,7 +693,7 @@ int main(int argc, char *argv[]) {
             rdn_2_fslp.initialize();
 
             // 障害物との交差判定
-            rdn_2_fslp.dissconnect_edges(obstacle_2_fslp_ptrs);
+            rdn_2_fslp.disconnect_edges(obstacle_2_fslp_ptrs);
 
             std::shared_ptr<Net_2> rdn_2_fslp_ptr = std::make_shared<rDn_2>(rdn_2_fslp);
 
@@ -771,6 +777,122 @@ int main(int argc, char *argv[]) {
             break;
 
         }
+
+        case 8: {
+            //** Pedestrian のテスト **//
+            const int NUM_SAMPLES = 1000000;  // サンプル数を多めに（100万回）
+            std::vector<double> history (NUM_SAMPLES);
+
+            try {
+                Pedestrian pedestrian(-0.5);  // mu_coef = -1 → 平均1になるはず
+
+                for (int i = 0; i < NUM_SAMPLES; ++i) {
+                    pedestrian.change_pedestrian();
+                    double coef = pedestrian.get_coef();
+                    history.at(i) = coef;
+                }
+
+                std::sort(history.begin(), history.end());
+                double empirical_median;
+                if (NUM_SAMPLES % 2 == 0) {
+                    empirical_median = (history[NUM_SAMPLES / 2 - 1] + history[NUM_SAMPLES / 2]) / 2.0;
+                } else {
+                    empirical_median = history[NUM_SAMPLES / 2];
+                }
+                
+                std::cout << "Sample size       : " << NUM_SAMPLES << std::endl;
+                std::cout << "Empirical median  : " << empirical_median << std::endl;
+                std::cout << "Expected median     : 1.0" << std::endl;
+        
+            } catch (const std::exception& ex) {
+                std::cerr << "Exception: " << ex.what() << std::endl;
+            }
+        }
+
+        case 9: {
+            //** 重み付き最短路のテスト **//
+            // ランダムドロネー網の初期化
+            std::cout << "initialize rDn" << std::endl;
+            std::vector<Point_2> domain_2_vertices {{0.0, 0.0}, 
+                                                    {180.0, 0.0}, 
+                                                    {180.0, 105.0}, 
+                                                    {0.0, 105.0}};
+            Polygon_2 domain_2 = Polygon_2(domain_2_vertices.begin(), domain_2_vertices.end());
+            std::vector<std::shared_ptr<Obstacle_2>> domain_2_ptrs = Obstacle_2::convert_polygon(domain_2, 
+                                                                                                 false, 
+                                                                                                 false, 
+                                                                                                 true, 
+                                                                                                 Obstacle_2::DOMAIN_NAME);
+            
+            rDn_2_WTSN rdn_2_wtsn(100000, domain_2);
+            rdn_2_wtsn.initialize();
+            
+            // 障害物との交差判定
+            std::cout << "cut edges intersecting obstacles" << std::endl;
+            rdn_2_wtsn.disconnect_edges(domain_2_ptrs);
+
+            // 重み付け
+            std::cout << "weigh edges" << std::endl;
+            std::vector<Point_2> region_2_vertices {{0.0-50.0, 30.0}, 
+                                                    {180.0+50.0, 30.0}, 
+                                                    {180.0+50.0, 75.0}, 
+                                                    {0.0-50.0, 75.0}};
+            Polygon_2 region_2_polygon = Polygon_2(region_2_vertices.begin(), region_2_vertices.end());
+            Weight_Passability_WTSN w_region_2 {2.0, 
+                                                10, 
+                                                15, 
+                                                15};
+            Region_2_WTSN region_2_wtsn {region_2_polygon, w_region_2};
+
+            std::vector<std::shared_ptr<Region_2_WTSN>> region_ptrs {std::make_shared<Region_2_WTSN>(region_2_wtsn)};
+            rdn_2_wtsn.weight_edges(region_ptrs);
+
+            // シミュレータの定義
+            std::shared_ptr<rDn_2_WTSN> rdn_2_wtsn_ptr = std::make_shared<rDn_2_WTSN>(rdn_2_wtsn);
+            std::vector<Point_2> demand_points {{0.0, 0.0}, 
+                                                {180.0, 105.0}};
+            std::vector<std::vector<double>> demand_matrix {{1, 0}, 
+                                                            {0, 1}};
+            Simulator_WTSN simulator (domain_2, 
+                                      rdn_2_wtsn_ptr, 
+                                      demand_points, 
+                                      demand_matrix);
+
+            // 最短路探索
+            std::cout << "claculate the shortest path tree" << std::endl;
+            std::deque<rDn_2_WTSN::vertex_descriptor> shortest_path;
+            shortest_path = simulator.calc_pedestrian_path(simulator.get_demand_nodes().at(0), 
+                                                           simulator.get_demand_nodes().at(1));
+            
+            // 書き出し
+            std::cout << "output the result" << std::endl;
+            for (auto& vertex : shortest_path) {
+                std::cout << (*simulator.get_net_ptr())[vertex]->x() << ","<< (*simulator.get_net_ptr())[vertex]->y() << ",0.0" << std::endl;
+            }
+
+            // 減衰
+            std::cout << "damp" << std::endl;
+            simulator.damp(shortest_path);
+            rDn_2_WTSN::edge_iterator eit, eit_end;
+            for (boost::tie(eit, eit_end) = boost::edges(rdn_2_wtsn); eit != eit_end; ++eit) {
+                double c = std::dynamic_pointer_cast<Edge_2_WTSN>(rdn_2_wtsn[*eit])->access_weight_passability_wtsn().get_curr_count();
+                if (c != 0) {
+                    std::cout << *eit << " " << c << std::endl;
+                }
+            }
+
+            // 増幅
+            std::cout << "amp" << std::endl;
+            simulator.amp();
+            for (boost::tie(eit, eit_end) = boost::edges(rdn_2_wtsn); eit != eit_end; ++eit) {
+                double c = std::dynamic_pointer_cast<Edge_2_WTSN>(rdn_2_wtsn[*eit])->access_weight_passability_wtsn().get_curr_count();
+                if (c != 0) {
+                    std::cout << *eit << " " << c << std::endl;
+                }
+            }
+
+        }
+
         default:
             break;
     }

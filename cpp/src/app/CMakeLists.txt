@@ -20,7 +20,9 @@ target_link_libraries(main PRIVATE
     core_net
     core_node
     core_obstacle
+    core_region
     core_util
     core_weight_mapper
     domain_flp
+    domain_wtsn
 )

@@ -236,7 +236,7 @@ void Net_3::remove_vertex(const Net_3::vertex_descriptor vertex) {
     boost::remove_vertex(vertex, *this);
 }
 
-void Net_3::dissconnect_edges(std::vector<std::shared_ptr<Obstacle_3>> obstacle_ptrs) {
+void Net_3::disconnect_edges(std::vector<std::shared_ptr<Obstacle_3>> obstacle_ptrs) {
     Net_3::edge_iterator eit, eit_end;
     //TODO エッジの数 × 障害物の数 だけ計算している．OpenCLを使って省力化したい 
     for (boost::tie(eit, eit_end) = boost::edges(*this); eit != eit_end; ++eit) {
@@ -250,6 +250,11 @@ void Net_3::dissconnect_edges(std::vector<std::shared_ptr<Obstacle_3>> obstacle_
             }
         }
     }
+}
+
+void Net_3::weight_edges(std::vector<std::shared_ptr<Region_3>> region_ptrs) {
+    throw std::runtime_error("Not implemented yet.\n"
+                             "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
 }
 
 std::vector<std::pair<Net_3::vertex_descriptor, double>> Net_3::calculate_shortest_path_tree(

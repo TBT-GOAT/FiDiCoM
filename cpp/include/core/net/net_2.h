@@ -41,6 +41,7 @@
 #include "core/node/node_2.h"
 #include "core/edge/edge_2.h"
 #include "core/obstacle/obstacle_2.h"
+#include "core/region/region_2.h"
 
 // include boost graph library
 #include <boost/graph/adjacency_list.hpp>
@@ -204,7 +205,13 @@ class Net_2 : public Graph_2 {
          * 
          * @param obstacle_ptrs 
          *************************************************/
-        void dissconnect_edges(std::vector<std::shared_ptr<Obstacle_2>> obstacle_ptrs);
+        void disconnect_edges(std::vector<std::shared_ptr<Obstacle_2>> obstacle_ptrs);
+        /*************************************************
+         * @brief 重み付き領域と交差するエッジを重み付ける
+         * 
+         * @param region_ptrs 
+         *************************************************/
+        void weight_edges(std::vector<std::shared_ptr<Region_2>> region_ptrs);
         /*************************************************
          * @brief 最短経路木を計算する
          * 

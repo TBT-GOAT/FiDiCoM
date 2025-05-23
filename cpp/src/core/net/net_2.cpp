@@ -204,7 +204,7 @@ void Net_2::remove_vertex(const Net_2::vertex_descriptor vertex) {
     boost::remove_vertex(vertex, *this);
 }
 
-void Net_2::dissconnect_edges(std::vector<std::shared_ptr<Obstacle_2>> obstacle_ptrs) {
+void Net_2::disconnect_edges(std::vector<std::shared_ptr<Obstacle_2>> obstacle_ptrs) {
     Net_2::edge_iterator eit, eit_end;
     //TODO エッジの数 × 障害物の数 だけ計算している．OpenCLを使って省力化したい 
     for (boost::tie(eit, eit_end) = boost::edges(*this); eit != eit_end; ++eit) {
@@ -215,6 +215,24 @@ void Net_2::dissconnect_edges(std::vector<std::shared_ptr<Obstacle_2>> obstacle_
 
                 obstacle_ptr->insert_x_edge_ptr((*this)[*eit]);
                 (*this)[*eit]->insert_x_obstacle_ptr(obstacle_ptr);
+            }
+        }
+    }
+}
+
+void Net_2::weight_edges(std::vector<std::shared_ptr<Region_2>> region_ptrs) {
+    Net_2::edge_iterator eit, eit_end;
+    //TODO エッジの数 × 領域の数 だけ計算している．OpenCLを使って省力化したい
+    for (boost::tie(eit, eit_end) = boost::edges(*this); eit != eit_end; ++eit) {
+        for (auto region_ptr : region_ptrs) {
+            if (region_ptr->is_intersecting(*(*this)[*eit])) {
+                // 重いものを優先
+                if ((*this)[*eit]->get_weight_visibility() < region_ptr->get_weight_visibility()) {
+                    (*this)[*eit]->set_weight_visibility(region_ptr->get_weight_visibility());
+                }
+                if ((*this)[*eit]->get_weight_passability() < region_ptr->get_weight_passability()) {
+                    (*this)[*eit]->set_weight_passability(region_ptr->get_weight_passability());
+                }
             }
         }
     }

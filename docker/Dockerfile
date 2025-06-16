@@ -24,7 +24,8 @@ RUN apt-get update && apt-get install -y \
     libeigen3-dev \
     libcgal-dev \
     libomp-dev \
-    libtbb-dev
+    libtbb-dev \
+    nlohmann-json3-dev
      
 # cmake
 RUN apt-get update && apt-get install -y \

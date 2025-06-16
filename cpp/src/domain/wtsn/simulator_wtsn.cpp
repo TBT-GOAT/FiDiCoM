@@ -4,19 +4,82 @@
 #include "domain/wtsn/simulator_wtsn.h"
 
 // include util
+#include "core/util/arithmetic_util.h"
+#include "core/util/std_vector_util.h"
 #include "core/util/union_find.h"
 
+// include stl libraries
+#include <chrono>
+
+// include nlohmann-json
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
 
 
 //** Constructor **//
-Simulator_WTSN::Simulator_WTSN(Polygon_2 domain, 
-                               std::shared_ptr<rDn_2_WTSN> net_ptr, 
-                               std::vector<Point_2> demand_points, 
-                               std::vector<std::vector<double>> demand_matrix) :
+Simulator_WTSN::Simulator_WTSN(const Polygon_2 domain, 
+                               const std::shared_ptr<rDn_2_WTSN> net_ptr, 
+                               const std::vector<Point_2> demand_points, 
+                               const std::vector<std::vector<double>> demand_matrix) :
     domain(domain), 
-    net_ptr(net_ptr)
+    net_ptr(net_ptr), 
+    demand_points(demand_points)
 {
     // demand_nodes
+    find_demand_nodes(demand_points);
+
+    // trans_prob_matrix
+    trans_prob_matrix = normalize_matrix(demand_matrix);
+}
+
+Simulator_WTSN::Simulator_WTSN(const Polygon_2 domain, 
+                               const std::shared_ptr<rDn_2_WTSN> net_ptr, 
+                               std::ifstream& input_file) : 
+    domain(domain),
+    net_ptr(net_ptr)
+{
+    json j;
+    input_file >> j;
+
+    // demand_nodes
+    for (const auto& point : j["node_coordinates"]) {
+        demand_points.emplace_back(point[0], point[1]);
+    }
+
+    find_demand_nodes(demand_points);
+
+    // trans_prob_matrix
+    for (const auto& row : j["weight_matrix"]) {
+        std::vector<double> vec_row;
+        for (const auto& val : row) {
+            vec_row.push_back(val);
+        }
+        trans_prob_matrix.push_back(vec_row);
+    }
+
+    trans_prob_matrix = normalize_matrix(trans_prob_matrix);
+    
+}
+
+Simulator_WTSN::Simulator_WTSN(const Polygon_2 domain, 
+                               const std::shared_ptr<rDn_2_WTSN> net_ptr, 
+                               const std::string& input_file_path) : 
+    domain(domain),
+    net_ptr(net_ptr)
+{
+    std::ifstream input_file(input_file_path);
+    if (!input_file.is_open()) {
+        throw std::runtime_error("Could not open input file: " + input_file_path);
+    }
+    
+    // コンストラクタのオーバーロード
+    *this = Simulator_WTSN(domain, net_ptr, input_file);
+    input_file.close();
+}
+
+//** Constructor Support Functions **//
+void Simulator_WTSN::find_demand_nodes(std::vector<Point_2> demand_points) {
+    
     for (auto& demand_point : demand_points) {
         rDn_2_WTSN::vertex_descriptor nearest_vertex = this->net_ptr->find_nearest_node(demand_point);
         
@@ -50,8 +113,14 @@ Simulator_WTSN::Simulator_WTSN(Polygon_2 domain,
 
     }
 
-    // trans_prob_matrix
-    trans_prob_matrix = normalize_matrix(demand_matrix);
+    if (demand_nodes.size() != demand_points.size()) {
+        // 対象領域内にあるノードの数が需要点の数と一致しない場合はエラー
+        throw std::runtime_error(
+            "Could not find all demand nodes.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
 }
 
 //** Getter **//
@@ -69,6 +138,9 @@ std::set<rDn_2_WTSN::edge_descriptor> Simulator_WTSN::get_unsaturated_edges() co
 }
 std::set<rDn_2_WTSN::edge_descriptor> Simulator_WTSN::get_activated_edges() const {
     return activated_edges;
+}
+std::set<rDn_2_WTSN::edge_descriptor> Simulator_WTSN::get_living_edges() const {
+    return living_edges;
 }
 
 //** Simulation Functions **//
@@ -121,26 +193,19 @@ std::pair<rDn_2_WTSN::vertex_descriptor, rDn_2_WTSN::vertex_descriptor> Simulato
 
 std::deque<rDn_2_WTSN::vertex_descriptor> Simulator_WTSN::calc_pedestrian_path(const rDn_2_WTSN::vertex_descriptor O, 
                                                                                const rDn_2_WTSN::vertex_descriptor D) const {
-    std::deque<rDn_2_WTSN::vertex_descriptor> shortest_path;
-    std::vector<std::pair<rDn_2_WTSN::vertex_descriptor, double>> shortest_path_tree;
-    
-    shortest_path_tree = this->net_ptr->calculate_shortest_path_tree(O, 
-                                                                     Net_2::MODE_ROUTE, 
-                                                                     true, 
-                                                                     true);
+    std::deque<std::pair<rDn_2_WTSN::vertex_descriptor, double>> shortest_path;
+    shortest_path = this->net_ptr->calculate_shortest_path(O, 
+                                                           D, 
+                                                           Net_2::MODE_ROUTE,
+                                                           true, 
+                                                           true);
 
-    if (shortest_path_tree.at(D).second == std::numeric_limits<double>::max()) {
-        // 到達不可能
-        return shortest_path;
+    std::deque<rDn_2_WTSN::vertex_descriptor> pedestrian_path;
+    for (auto v_and_d : shortest_path) {
+        pedestrian_path.push_back(v_and_d.first);
     }
 
-    for (auto vertex=D; vertex != O; vertex = shortest_path_tree.at(vertex).first) {
-        shortest_path.push_front(vertex);
-    }
-
-    shortest_path.push_front(O);
-
-    return shortest_path;
+    return pedestrian_path;
 
 }
 
@@ -186,7 +251,7 @@ void Simulator_WTSN::amp() {
 
 }
 
-void Simulator_WTSN::update_activated_edges() {
+void Simulator_WTSN::update_edge_sets() {
     // 一旦空にする
     activated_edges = {};
     
@@ -194,15 +259,21 @@ void Simulator_WTSN::update_activated_edges() {
     rDn_2_WTSN::edge_iterator eit, eit_end;
     for (boost::tie(eit, eit_end) = boost::edges(*net_ptr); eit != eit_end; ++eit) {
         std::shared_ptr<Edge_2_WTSN> edge_ptr = std::dynamic_pointer_cast<Edge_2_WTSN>((*get_net_ptr())[*eit]);
+        
         // 活性化判定
         if (edge_ptr->is_activated()) {
             activated_edges.insert(*eit);
+            // 動的であるか判定
+            if (!edge_ptr->access_weight_passability_wtsn().get_is_fixed()) {
+                living_edges.insert(*eit);
+            }
         }
+
     }
         
 }
 
-bool Simulator_WTSN::is_connecting_all_demand_nodes() {
+bool Simulator_WTSN::is_connecting_all_demand_nodes() const {
     
     if (activated_edges.empty()) {
         return false;
@@ -248,16 +319,19 @@ void Simulator_WTSN::setup(const size_t threshold_duration,
 }
 
 void Simulator_WTSN::run() {
-    size_t OD_num = demand_nodes.size() * demand_nodes.size(); // 始点と終点の組み合わせの数
-
+    
     size_t iter {0};
     size_t non_growth_duration {0};
-    double prev_total_edge_length {0.0};
+    double prev_total_living_edge_length {0.0};
+    double curr_total_living_edge_length {0.0};
+    bool connection = false;
+    bool is_converged = false;
 
     while (non_growth_duration < threshold_duration 
             && 
            iter < max_iteration) 
     {
+
         // 歩行者を変更
         Weight_Passability_WTSN::get_pedestrian().change_pedestrian();
 
@@ -273,26 +347,419 @@ void Simulator_WTSN::run() {
         // エッジの重みを増幅
         amp();
 
-        // 活性化したエッジを更新
-        update_activated_edges();
+        // エッジの集合を更新
+        update_edge_sets();
 
         // 結果
-        bool connection = is_connecting_all_demand_nodes();
-        double curr_total_edge_length {0.0};
-        for (auto& edge : activated_edges) {
-            curr_total_edge_length += (*get_net_ptr())[edge]->calc_length();
+        connection = is_connecting_all_demand_nodes();
+        for (auto& edge : living_edges) {
+            curr_total_living_edge_length += (*get_net_ptr())[edge]->calc_length();
         }
+
+        // 収束判定
+        if (
+            connection // 連結である
+              && // かつ
+            curr_total_living_edge_length <= prev_total_living_edge_length // ネットワークが成長していない
+        ) 
+        {
+            non_growth_duration++;
+            is_converged = true;
+        } else {
+            non_growth_duration = 0;
+            is_converged = false;
+        }
+
+        // 記録
+        history.emplace_back(
+            iter, 
+            connection, 
+            is_converged, 
+            unsaturated_edges.size(), 
+            activated_edges.size(), 
+            living_edges.size(),
+            curr_total_living_edge_length
+        );
 
         // 更新
-        if (connection // 連結である
-             && // かつ
-            curr_total_edge_length <= prev_total_edge_length // ネットワークが成長していない
-        ) {
-            non_growth_duration += 1;
-        }
-        prev_total_edge_length = curr_total_edge_length;
-        iter += 1;
+        prev_total_living_edge_length = curr_total_living_edge_length;
+        curr_total_living_edge_length = 0.0;
+        iter++;
 
+    }
+
+}
+
+//** Analysis Functions **//
+Net_2 Simulator_WTSN::build_wtsn_graph() const {
+    Net_2 wtsn;
+    std::unordered_map<rDn_2_WTSN::vertex_descriptor, Net_2::vertex_descriptor> vertex_map;
+
+    // ノードのコピー
+    for (auto edge : this->get_living_edges()) {
+        auto src = boost::source(edge, *(this->net_ptr));
+        auto tgt = boost::target(edge, *(this->net_ptr));
+        if (vertex_map.find(src) == vertex_map.end()) {
+            vertex_map[src] = boost::add_vertex((*(this->net_ptr))[src], wtsn);
+        }
+        if (vertex_map.find(tgt) == vertex_map.end()) {
+            vertex_map[tgt] = boost::add_vertex((*(this->net_ptr))[tgt], wtsn);
+        }
+        
+        std::shared_ptr<Edge_2> edge_ptr = std::make_shared<Edge_2>(wtsn[vertex_map[src]], wtsn[vertex_map[tgt]]);
+
+        // エッジの重みを設定
+        double w = std::dynamic_pointer_cast<Edge_2_WTSN>((*(this->get_net_ptr()))[edge])->access_weight_passability_wtsn().get_default_init_weight();
+        edge_ptr->set_weight_passability(w);
+
+        boost::add_edge(vertex_map[src], vertex_map[tgt], edge_ptr, wtsn);
+    }
+
+    // 移動需要点を復元
+    for (size_t i {0}; i < demand_nodes.size(); ++i) {
+        rDn_2_WTSN::vertex_descriptor original_demand_vertex = demand_nodes.at(i);
+        wtsn[vertex_map[original_demand_vertex]] = std::make_shared<Node_2>(demand_points.at(i));
+    }
+
+    return wtsn;
+
+}
+
+Net_2 Simulator_WTSN::simplify_wtsn() const {
+    
+    //TODO 重み付きへの対応
+
+    // WTSNのコピー
+    Net_2 simplified_network = build_wtsn_graph();
+
+    // 縮約
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        Net_2::vertex_descriptor to_remove = Net_2::null_vertex();;
+
+        // 削除すべき頂点の収集
+        for (auto v : boost::make_iterator_range(boost::vertices(simplified_network))) {
+            std::size_t deg = boost::degree(v, simplified_network);
+            if (deg == 1 || deg == 2) {
+                // 次数が 1 or 2 のとき
+                if (find_index(demand_points, static_cast<Point_2>(*simplified_network[v])) == -1) {
+                    // 移動需要点でないとき
+                    // build_wtsn_graph() の出力は，移動需要点の位置を入力時に復元している
+                    to_remove = v;
+                    break;
+                }
+            }
+        }
+
+        // 削除
+        if (to_remove == Net_2::null_vertex()) continue;
+        std::size_t deg = boost::degree(to_remove, simplified_network);
+
+        if (deg == 1) {
+            auto nbr = *boost::adjacent_vertices(to_remove, simplified_network).first;
+            boost::remove_edge(to_remove, nbr, simplified_network);
+            boost::clear_vertex(to_remove, simplified_network);
+            boost::remove_vertex(to_remove, simplified_network);
+            changed = true;
+
+        } else if (deg == 2) {
+            auto it = boost::adjacent_vertices(to_remove, simplified_network);
+            auto v1 = *it.first;
+            auto v2 = *(++it.first);
+
+            if (v1 != v2 && !boost::edge(v1, v2, simplified_network).second) {
+                std::shared_ptr<Node_2> n1 = simplified_network[v1];
+                std::shared_ptr<Node_2> n2 = simplified_network[v2];
+                boost::add_edge(v1, v2, std::make_shared<Edge_2>(n1, n2), simplified_network);
+            }
+
+            boost::clear_vertex(to_remove, simplified_network);
+            boost::remove_vertex(to_remove, simplified_network);
+            changed = true;
+        }
+
+    }    
+
+    return simplified_network;
+
+}
+
+double Simulator_WTSN::calc_total_length(Net_2& result_network, 
+                                         bool is_weighted) const {
+    double total_length;
+
+    if (is_weighted) {
+        throw std::runtime_error(
+            //TODO 重み付きへの対応
+            "Not implemented.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    } else {
+        for (auto e : boost::make_iterator_range(boost::edges(result_network))) {
+            total_length += result_network[e]->calc_length();
+        }
+    }
+
+    return total_length;
+
+}
+
+double Simulator_WTSN::calc_total_detour(Net_2& result_network, 
+                                         bool is_weighted, 
+                                         std::vector<Net_2::vertex_descriptor> demand_vertices) const {
+    double total_detour;
+
+    // 移動需要点の同定
+    if (demand_vertices.empty()) {
+        for (auto demand_point : demand_points) {
+            
+            Net_2::vertex_iterator vit, vit_end;
+            bool found = false;
+            for (boost::tie(vit, vit_end) = boost::vertices(result_network); vit != vit_end; ++vit) {
+                if(*(result_network[*vit]) == demand_point) {
+                    demand_vertices.push_back(*vit);
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                throw std::runtime_error(
+                    "Could not find a demand point.\n"
+                    "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+                );
+            }
+
+        }
+    }
+
+    for (size_t i {0}; i < demand_vertices.size(); ++i) {
+        for (size_t j {0}; j < demand_vertices.size(); ++j) {
+            Net_2::vertex_descriptor Oi = demand_vertices.at(i);
+            Net_2::vertex_descriptor Dj = demand_vertices.at(j);
+            std::deque<std::pair<Net_2::vertex_descriptor, double>> sp_ij = result_network.calculate_shortest_path(
+                Oi, 
+                Dj, 
+                Net_2::MODE_ROUTE, 
+                true, 
+                false, {}
+            );
+            double detour_ij = sp_ij.back().second;
+
+            if (is_weighted) {
+                total_detour += this->get_trans_prob_matrix().at(i).at(j) * detour_ij;
+            } else {
+                total_detour += detour_ij;
+            }
+
+        }
+    }
+
+    return total_detour;
+
+}
+
+std::pair<double, double> Simulator_WTSN::evaluate_network(Net_2& result_network, 
+                                        bool is_weighted_length, 
+                                        bool is_weighted_detour, 
+                                        std::vector<Net_2::vertex_descriptor> demand_vertices, 
+                                        bool checking_redundancy) const {
+    double total_length {0.0};
+    double total_detour {0.0};
+
+    if (checking_redundancy) {
+        // 最短路で使われないエッジはtotal_lengthに含めない
+        // 移動需要点の同定
+        if (demand_vertices.empty()) {
+            for (auto demand_point : demand_points) {
+                
+                Net_2::vertex_iterator vit, vit_end;
+                bool found = false;
+                for (boost::tie(vit, vit_end) = boost::vertices(result_network); vit != vit_end; ++vit) {
+                    if(*(result_network[*vit]) == demand_point) {
+                        demand_vertices.push_back(*vit);
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    throw std::runtime_error(
+                        "Could not find a demand point.\n"
+                        "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+                    );
+                }
+
+            }
+        }
+
+        std::set<Net_2::edge_descriptor> used_edges; // 最短路で使われたエッジの集合
+        for (size_t i {0}; i < demand_vertices.size(); ++i) {
+            for (size_t j {0}; j < demand_vertices.size(); ++j) {
+                Net_2::vertex_descriptor Oi = demand_vertices.at(i);
+                Net_2::vertex_descriptor Dj = demand_vertices.at(j);
+                std::deque<std::pair<Net_2::vertex_descriptor, double>> sp_ij = result_network.calculate_shortest_path(
+                    Oi, 
+                    Dj, 
+                    Net_2::MODE_ROUTE, 
+                    true, 
+                    false, {}
+                );
+                double detour_ij = sp_ij.back().second;
+
+                if (is_weighted_detour) {
+                    total_detour += this->get_trans_prob_matrix().at(i).at(j) * detour_ij;
+                } else {
+                    total_detour += detour_ij;
+                }
+
+                // 最短路で使われたエッジを記録
+                std::pair<Net_2::edge_descriptor, bool> used_edge_existance;
+                for (size_t k {0}; k < sp_ij.size() - 1; ++k) {
+                    used_edge_existance = boost::edge(sp_ij.at(k).first, sp_ij.at(k + 1).first, result_network);
+                    if (!used_edge_existance.second) {
+                        throw std::runtime_error("Invalid adjacency (" + std::to_string(sp_ij.at(k).first) + " and " + std::to_string(sp_ij.at(k + 1).first) + ").\n"
+                                                 "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
+                    } else {
+                        used_edges.insert(used_edge_existance.first);
+                    }
+                }
+            }
+        }
+
+        for (const auto& used_edge : used_edges) {
+            if (is_weighted_length) {
+                throw std::runtime_error(
+                    //TODO 重み付きへの対応
+                    "Not implemented.\n"
+                    "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+                );
+            } else {
+                total_length += result_network[used_edge]->calc_length();
+            }
+        }
+
+    } else {
+        total_length = calc_total_length(result_network, is_weighted_length);
+        total_detour = calc_total_detour(result_network, is_weighted_detour, demand_vertices);
+    }
+
+    return std::make_pair(total_length, total_detour);
+
+}
+
+//** Record Functions **//
+void Simulator_WTSN::save_config(std::ofstream& config_file) const {
+
+    if (config_file.tellp() != 0) {
+        throw std::runtime_error(
+            "Input empty file.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    json j; // JSON形式
+
+    // 入力: domain
+    for (const auto& p : this->domain) {
+        j["input"]["domain"].push_back({
+            {"x", p.x()},
+            {"y", p.y()}
+        });
+    }
+
+    // 乱数
+    j["Randim_Engine"]["seed"] = Random_Engine::get_seed();
+
+    // pedestrian パラメータ
+    j["Pedestrian"] = {
+        {"mu_coef", Pedestrian::get_mu_coef()},
+        {"sigma_coef", Weight_Passability_WTSN::get_pedestrian().get_sigma_coef()}
+    };
+
+    // weight パラメータ
+    j["weight"] = {
+        {"global_init_weight", Weight_Passability_WTSN::get_global_init_weight()},
+        {"conv_weight", Weight_Passability_WTSN::get_conv_weight()},
+        {"damp_count", Weight_Passability_WTSN::get_damp_count()},
+        {"kappa", Weight_Passability_WTSN::get_kappa()}
+    };
+
+    // ノード
+    auto node_ptrs = this->get_net_ptr()->collect_node_ptrs();
+    for (const auto& node_ptr : node_ptrs) {
+        j["node"]["coords"].push_back({
+            {"x", node_ptr->x()},
+            {"y", node_ptr->y()}
+        });
+    }
+
+    // エッジ
+    j["edge"]["activated_ratio"] = Edge_2_WTSN::get_activated_ratio();
+
+    rDn_2_WTSN::edge_iterator eit, eit_end;
+    for (boost::tie(eit, eit_end) = boost::edges(*(this->get_net_ptr())); eit != eit_end; ++eit) {
+        auto s = boost::source(*eit, *(this->get_net_ptr()));
+        auto t = boost::target(*eit, *(this->get_net_ptr()));
+        auto e_ptr = std::dynamic_pointer_cast<Edge_2_WTSN>((*(this->get_net_ptr()))[*eit]);
+
+        j["edge"]["info"].push_back({
+            {"s", s},
+            {"t", t},
+            {"is_fixed", e_ptr->access_weight_passability_wtsn().get_is_fixed()},
+            {"default_init_weight", e_ptr->access_weight_passability_wtsn().get_default_init_weight()},
+            {"amp_count_standadizer", e_ptr->access_weight_passability_wtsn().get_amp_count_standadizer()},
+            {"curr_count", e_ptr->access_weight_passability_wtsn().get_curr_count()},
+            {"damp_required_count", e_ptr->access_weight_passability_wtsn().get_damp_required_count()},
+            {"amp_required_count", e_ptr->access_weight_passability_wtsn().get_amp_required_count()},
+            {"sigmoid_band", e_ptr->access_weight_passability_wtsn().get_sigmoid_band()}
+        });
+    }
+
+    // ファイルへ書き出し
+    config_file << std::setw(4) << j << std::endl;
+
+}
+
+void Simulator_WTSN::save_log(std::ofstream& log_file) const {
+    
+    if (log_file.tellp() != 0) {
+        throw std::runtime_error(
+            "Input empty file.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    // ヘッダ
+    log_file << "iteration,"
+             << "is_connecting," 
+             << "is_converged," 
+             << "unsaturated_edge_num," 
+             << "activated_edge_num," 
+             << "living_edge_num," 
+             << "living_edge_length\n";
+
+    // 履歴
+    for (const auto& [
+        iteration, 
+        is_connecting, 
+        is_converged, 
+        unsaturated_edge_num, 
+        activated_edge_num, 
+        living_edge_num, 
+        living_edge_length
+    ] : history) 
+    {
+        log_file << std::scientific 
+                 << std::setprecision(std::numeric_limits<double>::max_digits10) 
+                 << iteration << ","
+                 << is_connecting << ","
+                 << is_converged << ","
+                 << unsaturated_edge_num<< ","
+                 << activated_edge_num << ","
+                 << living_edge_num << ","
+                 << living_edge_length << "\n";
     }
 
 }

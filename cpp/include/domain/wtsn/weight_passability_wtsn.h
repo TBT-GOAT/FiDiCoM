@@ -16,8 +16,9 @@ class Weight_Passability_WTSN {
         bool is_fixed = false; // 変化しない重みかどうか
 
         static double global_init_weight;           // 重みの初期値の基準値
-        double omega;                               // 重みの初期値（上限）の基準値 omega に対する比
+        double default_init_weight;                 // 重みの初期値のデフォルト値（上限）
         static constexpr double CONV_WEIGHT = 1.0;  // 重みの収束値（下限）
+        double omega;                               // 重みの初期値のデフォルト値（上限）の基準値に対する比
 
         static double kappa; // 短距離選好度（重みを重視 0 <= kappa <= 1 距離を重視）
 
@@ -58,13 +59,15 @@ class Weight_Passability_WTSN {
         static Pedestrian& get_pedestrian();
         bool get_is_fixed() const;
         static double get_global_init_weight();
+        double get_default_init_weight() const;
+        double get_omega() const;
         double get_init_weight() const;
         double get_init_weight(double _kappa) const;
-        double get_conv_weight() const;
+        static double get_conv_weight();
         double get_curr_weight() const;
-        double get_kappa() const;
+        static double get_kappa();
         double get_curr_count() const;
-        double get_damp_count() const;
+        static double get_damp_count();
         double get_amp_count() const;
         size_t get_amp_count_standadizer() const;
         size_t get_damp_required_count() const;

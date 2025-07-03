@@ -3,6 +3,7 @@
 #include <cmath>
 #include <iostream>
 #include <float.h>
+#include <iomanip>
 
 // include header
 #include "domain/wtsn/weight_passability_wtsn.h"
@@ -23,8 +24,7 @@ Weight_Passability_WTSN::Weight_Passability_WTSN() :
 {
 
     // 重み1で変化しない
-    double init_weight = 1.0;
-    this->omega = init_weight / this->global_init_weight;
+    default_init_weight = 1.0;
 
 }
 
@@ -33,6 +33,7 @@ Weight_Passability_WTSN::Weight_Passability_WTSN(const double init_weight,
                                const size_t damp_required_count, 
                                const size_t amp_required_count) :
     is_fixed(false),
+    default_init_weight(init_weight),
     curr_count(0.0),
     amp_count(DAMP_COUNT * (damp_required_count / amp_required_count) / amp_count_standadizer),
     amp_count_standadizer(amp_count_standadizer),
@@ -44,8 +45,6 @@ Weight_Passability_WTSN::Weight_Passability_WTSN(const double init_weight,
         throw std::runtime_error("Invalid inital weight (>= convergent weight (" + std::to_string(CONV_WEIGHT) + ")).\n"
                                  "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
     }
-
-    this->omega = init_weight / this->global_init_weight;
 
 }
 
@@ -59,15 +58,21 @@ bool Weight_Passability_WTSN::get_is_fixed() const {
 double Weight_Passability_WTSN::get_global_init_weight() {
     return global_init_weight;
 }
+double Weight_Passability_WTSN::get_default_init_weight() const {
+    return default_init_weight;
+}
+double Weight_Passability_WTSN::get_omega() const {
+    return default_init_weight / global_init_weight;
+}
 double Weight_Passability_WTSN::get_init_weight() const {
     // global_init_weightの変更に追従
-    return global_init_weight * ( (1 - kappa) * omega + kappa );
+    return global_init_weight * ( (1 - kappa) * get_omega() + kappa );
 }
 double Weight_Passability_WTSN::get_init_weight(double _kappa) const {
     // global_init_weightの変更に追従
-    return global_init_weight * ( (1 - _kappa) * omega + _kappa );
+    return global_init_weight * ( (1 - _kappa) * get_omega() + _kappa );
 }
-double Weight_Passability_WTSN::get_conv_weight() const {
+double Weight_Passability_WTSN::get_conv_weight() {
     return CONV_WEIGHT;
 }
 double Weight_Passability_WTSN::get_curr_weight() const {
@@ -83,7 +88,7 @@ double Weight_Passability_WTSN::get_curr_weight() const {
     }
 
 }
-double Weight_Passability_WTSN::get_kappa() const {
+double Weight_Passability_WTSN::get_kappa() {
     return kappa;
 }
 double Weight_Passability_WTSN::get_curr_count() const {
@@ -93,7 +98,7 @@ double Weight_Passability_WTSN::get_curr_count() const {
     }
     return curr_count;
 }
-double Weight_Passability_WTSN::get_damp_count() const {
+double Weight_Passability_WTSN::get_damp_count() {
     return DAMP_COUNT;
 }
 double Weight_Passability_WTSN::get_amp_count() const {
@@ -131,8 +136,8 @@ void Weight_Passability_WTSN::set_init_weight(const double init_weight) {
     if (this->global_init_weight < init_weight) {
         set_global_init_weight(init_weight);
     }
-    
-    this->omega = init_weight / global_init_weight;
+
+    this->default_init_weight = init_weight;
 
 }
 void Weight_Passability_WTSN::set_kappa(const double kappa) {
@@ -201,7 +206,7 @@ double Weight_Passability_WTSN::amp() {
     
     double next_count = curr_count - amp_count;
     
-    if (curr_count < 0) {
+    if (next_count < 0) {
         // 増幅しきっている
         set_curr_count(0.0);
     } else {

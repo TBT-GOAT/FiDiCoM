@@ -43,6 +43,10 @@ class Random_Engine {
             return engine;
         }
 
+        static int get_seed() {
+            return seed;
+        }
+
         // シードを設定する
         static void set_seed(unsigned int newSeed) {
             seed = newSeed;

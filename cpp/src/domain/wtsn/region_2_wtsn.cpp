@@ -10,6 +10,10 @@ Region_2_WTSN::Region_2_WTSN(const Polygon_2 polygon_2,
     Region_2(polygon_2), 
     weight_passability_wtsn(weight_passability_wtsn)
 {}
+Region_2_WTSN::Region_2_WTSN(const Weight_Passability_WTSN weight_passability_wtsn) : 
+    Region_2(),
+    weight_passability_wtsn(weight_passability_wtsn)
+{}
 
 //** Getter **//
 double Region_2_WTSN::get_weight_passability() const {

@@ -22,6 +22,7 @@ class Region_2_WTSN : public Region_2 {
         //** Constructor **//
         Region_2_WTSN(const Polygon_2 polygon_2, 
                       const Weight_Passability_WTSN weight_passability_wtsn);
+        Region_2_WTSN(const Weight_Passability_WTSN weight_passability_wtsn);
         
         //** Getter **//
         double get_weight_passability() const override;

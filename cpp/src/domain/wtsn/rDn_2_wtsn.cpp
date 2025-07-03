@@ -92,3 +92,10 @@ void rDn_2_WTSN::weight_edges(std::vector<std::shared_ptr<Region_2_WTSN>> region
         }
     }
 }
+
+void rDn_2_WTSN::reset_weight() {
+    rDn_2_WTSN::edge_iterator eit, eit_end;
+    for (boost::tie(eit, eit_end) = boost::edges(*this); eit != eit_end; ++eit) {
+        std::dynamic_pointer_cast<Edge_2_WTSN>((*this)[*eit])->access_weight_passability_wtsn().set_curr_count(0.0);
+    }
+}

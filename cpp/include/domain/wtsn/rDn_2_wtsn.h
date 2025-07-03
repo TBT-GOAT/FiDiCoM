@@ -34,6 +34,11 @@ class rDn_2_WTSN : public rDn_2 {
          * @param region_ptrs 
          *************************************************/
         void weight_edges(std::vector<std::shared_ptr<Region_2_WTSN>> region_ptrs);
+        /*************************************************
+         * @brief エッジの重みをリセットする
+         * 
+         *************************************************/
+        void reset_weight();
 };
 
 #endif // RDN_2_WTSN_H

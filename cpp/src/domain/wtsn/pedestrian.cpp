@@ -22,6 +22,9 @@ Pedestrian::Pedestrian(double sigma_coef):
 double Pedestrian::get_coef() const {
     return coef;
 }
+double Pedestrian::get_mu_coef() {
+    return MU_COEF;
+}
 double Pedestrian::get_sigma_coef() const {
     return sigma_coef;
 }

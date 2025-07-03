@@ -29,6 +29,7 @@ class Pedestrian {
 
         //** Getter **//
         double get_coef() const;
+        static double get_mu_coef();
         double get_sigma_coef() const;
 
         //** Setter **//

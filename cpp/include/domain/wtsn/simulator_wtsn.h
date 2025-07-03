@@ -17,23 +17,47 @@
 
 class Simulator_WTSN {
     private:
-    public: // TODO 消去
+    public: //TODO 消去
         Polygon_2 domain;                            // 対象領域
         std::shared_ptr<rDn_2_WTSN> net_ptr;         // ネットワーク
+        std::vector<Point_2> demand_points;          // 移動需要の入力点
         std::vector<rDn_2_WTSN::vertex_descriptor> demand_nodes;    // 移動の需要点
         std::vector<std::vector<double>> trans_prob_matrix;         // 移動確率行列
         std::uniform_real_distribution<> dist{0.0, 1.0};            // [0, 1]の一様分布
 
         std::set<rDn_2_WTSN::edge_descriptor> unsaturated_edges; // 重みに変化があるエッジの集合
         std::set<rDn_2_WTSN::edge_descriptor> activated_edges;   // 活性化したエッジの集合
+        std::set<rDn_2_WTSN::edge_descriptor> living_edges;      // 生きているエッジの集合
 
         // 収束条件
         size_t threshold_duration; // ネットワークが変化しない期間の閾値
         size_t max_iteration;      // 最大反復回数
 
-        // ログ
-        std::vector<std::tuple<size_t, bool, double>> history; // 反復回数, 収束しているか, 活性化したエッジの長さの総和
+        // 履歴
+        std::vector<std::tuple
+        <
+            size_t, // 反復回数
+            bool,   // 接続しているか
+            bool,   // 収束しているか
+            size_t, // 重みに変化があるエッジの数
+            size_t, // 活性化しているエッジの数
+            size_t, // 生きているエッジの数
+            double  // 生きているエッジの長さの総和
+        >
+        > history;
 
+        // 乱数
+        size_t seed;
+
+        //** Constructor Support Functions **//
+        /*************************************************
+         * @brief 需要点に対応するノードを探索する
+         * 
+         * @param demand_points 
+         * @return std::vector<rDn_2_WTSN::vertex_descriptor> 
+         *************************************************/
+        void find_demand_nodes(std::vector<Point_2> demand_points);
+        
         //** Simulation Functions **//
         /*************************************************
          * @brief 行列を標準化する（和を1にする）
@@ -70,33 +94,47 @@ class Simulator_WTSN {
          *************************************************/
         void amp();
         /*************************************************
-         * @brief 活性化したエッジの集合を更新する
+         * @brief 各種のエッジの集合を更新する
          * 
          *************************************************/
-        void update_activated_edges();
+        void update_edge_sets();
         /*************************************************
          * @brief 活性化したエッジがすべての需要点を連結しているか判定する
          * 
          * @return true 
          * @return false 
          *************************************************/
-        bool is_connecting_all_demand_nodes();
+        bool is_connecting_all_demand_nodes() const;
 
+        //** Analysis Functions **//
+        /*************************************************
+         * @brief 生きているエッジを使ってネットワークを構築する
+         * 
+         * @return Net_2 
+         *************************************************/
+        Net_2 build_wtsn_graph() const;
 
     public:
         //** Constructor **//
-        Simulator_WTSN(Polygon_2 domain, 
-                       std::shared_ptr<rDn_2_WTSN> net_ptr, 
-                       std::vector<Point_2> demand_points, 
-                       std::vector<std::vector<double>> demand_matrix);
+        Simulator_WTSN(const Polygon_2 domain, 
+                       const std::shared_ptr<rDn_2_WTSN> net_ptr, 
+                       const std::vector<Point_2> demand_points, 
+                       const std::vector<std::vector<double>> demand_matrix);
+        Simulator_WTSN(const Polygon_2 domain, 
+                       const std::shared_ptr<rDn_2_WTSN> net_ptr, 
+                       std::ifstream& input_file);
+        Simulator_WTSN(const Polygon_2 domain, 
+                       const std::shared_ptr<rDn_2_WTSN> net_ptr, 
+                       const std::string& input_file_path);
 
         //** Getter **//
-        std::shared_ptr<Pedestrian> get_pedestrian_ptr() const; 
         std::shared_ptr<rDn_2_WTSN> get_net_ptr() const; 
+        std::vector<Point_2> get_demand_points() const; 
         std::vector<rDn_2_WTSN::vertex_descriptor> get_demand_nodes() const; 
         std::vector<std::vector<double>> get_trans_prob_matrix() const; 
         std::set<rDn_2_WTSN::edge_descriptor> get_unsaturated_edges() const;
         std::set<rDn_2_WTSN::edge_descriptor> get_activated_edges() const;
+        std::set<rDn_2_WTSN::edge_descriptor> get_living_edges() const;
 
         //** Setter **//
 
@@ -113,8 +151,37 @@ class Simulator_WTSN {
          *************************************************/
         void run();
 
-        //** Logger **//
-        //TODO
+        //** Analysis Functions **//
+        /*************************************************
+         * @brief WTSNから冗長なエッジを除去したネットワークを構築する
+         * 
+         * @return Net_2 
+         *************************************************/
+        Net_2 simplify_wtsn() const;
+        double calc_total_length(Net_2& result_network, 
+                                 bool is_weighted=false) const;
+        double calc_total_detour(Net_2& result_network, 
+                                 bool is_weighted=false, 
+                                 std::vector<Net_2::vertex_descriptor> demand_vertices={}) const;
+        std::pair<double, double> evaluate_network(Net_2& result_network, 
+                                                bool is_weighted_length=false, 
+                                                bool is_weighted_detour=false, 
+                                                std::vector<Net_2::vertex_descriptor> demand_vertices={}, 
+                                                bool checking_redundancy=false) const;
+        
+        //** Record Functions **//
+        /*************************************************
+         * @brief シミュレーションの設定を記録する
+         * 
+         * @param config_file 
+         *************************************************/
+        void save_config(std::ofstream& config_file) const;
+        /*************************************************
+         * @brief シミュレーションのログを記録する
+         * 
+         * @param log_file 
+         *************************************************/
+        void save_log(std::ofstream& log_file) const;
 
 };
 

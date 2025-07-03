@@ -7,6 +7,13 @@
 // include pagmo
 #include <pagmo/pagmo.hpp>
 
+// include nlohmann-json
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
+// include CGAL library
+#include <CGAL/create_offset_polygons_2.h>
+
 // include network
 #include "core/net/rDn_2.h"
 #include "core/net/rDn_3.h"
@@ -777,7 +784,6 @@ int main(int argc, char *argv[]) {
             break;
 
         }
-
         case 8: {
             //** Pedestrian のテスト **//
             const int NUM_SAMPLES = 1000000;  // サンプル数を多めに（100万回）
@@ -808,9 +814,12 @@ int main(int argc, char *argv[]) {
                 std::cerr << "Exception: " << ex.what() << std::endl;
             }
         }
-
         case 9: {
             //** 重み付き最短路のテスト **//
+
+            // 乱数の種の設定
+            Random_Engine::set_seed(17);
+
             // ランダムドロネー網の初期化
             std::cout << "initialize rDn" << std::endl;
             std::vector<Point_2> domain_2_vertices {{0.0, 0.0}, 
@@ -824,7 +833,7 @@ int main(int argc, char *argv[]) {
                                                                                                  true, 
                                                                                                  Obstacle_2::DOMAIN_NAME);
             
-            rDn_2_WTSN rdn_2_wtsn(100000, domain_2);
+            rDn_2_WTSN rdn_2_wtsn(10000, domain_2);
             rdn_2_wtsn.initialize();
             
             // 障害物との交差判定
@@ -832,14 +841,14 @@ int main(int argc, char *argv[]) {
             rdn_2_wtsn.disconnect_edges(domain_2_ptrs);
 
             // 重み付け
-            std::cout << "weigh edges" << std::endl;
+            std::cout << "weight edges" << std::endl;
             std::vector<Point_2> region_2_vertices {{0.0-50.0, 30.0}, 
                                                     {180.0+50.0, 30.0}, 
                                                     {180.0+50.0, 75.0}, 
                                                     {0.0-50.0, 75.0}};
             Polygon_2 region_2_polygon = Polygon_2(region_2_vertices.begin(), region_2_vertices.end());
             Weight_Passability_WTSN w_region_2 {2.0, 
-                                                10, 
+                                                4, 
                                                 15, 
                                                 15};
             Region_2_WTSN region_2_wtsn {region_2_polygon, w_region_2};
@@ -848,49 +857,548 @@ int main(int argc, char *argv[]) {
             rdn_2_wtsn.weight_edges(region_ptrs);
 
             // シミュレータの定義
+            std::cout << "setup simulator" << std::endl;
             std::shared_ptr<rDn_2_WTSN> rdn_2_wtsn_ptr = std::make_shared<rDn_2_WTSN>(rdn_2_wtsn);
             std::vector<Point_2> demand_points {{0.0, 0.0}, 
                                                 {180.0, 105.0}};
-            std::vector<std::vector<double>> demand_matrix {{1, 0}, 
-                                                            {0, 1}};
+            std::vector<std::vector<double>> demand_matrix {{0, 1}, 
+                                                            {1, 0}};
             Simulator_WTSN simulator (domain_2, 
                                       rdn_2_wtsn_ptr, 
                                       demand_points, 
                                       demand_matrix);
 
-            // 最短路探索
-            std::cout << "claculate the shortest path tree" << std::endl;
-            std::deque<rDn_2_WTSN::vertex_descriptor> shortest_path;
-            shortest_path = simulator.calc_pedestrian_path(simulator.get_demand_nodes().at(0), 
-                                                           simulator.get_demand_nodes().at(1));
+            // // 最短路探索
+            // std::cout << "claculate the shortest path tree" << std::endl;
+            // std::deque<rDn_2_WTSN::vertex_descriptor> shortest_path;
+            // shortest_path = simulator.calc_pedestrian_path(simulator.get_demand_nodes().at(0), 
+            //                                                simulator.get_demand_nodes().at(1));
             
-            // 書き出し
-            std::cout << "output the result" << std::endl;
-            for (auto& vertex : shortest_path) {
-                std::cout << (*simulator.get_net_ptr())[vertex]->x() << ","<< (*simulator.get_net_ptr())[vertex]->y() << ",0.0" << std::endl;
+            // // 書き出し
+            // std::cout << "output the result" << std::endl;
+            // for (auto& vertex : shortest_path) {
+            //     std::cout << (*simulator.get_net_ptr())[vertex]->x() << ","<< (*simulator.get_net_ptr())[vertex]->y() << ",0.0" << std::endl;
+            // }
+
+            // // 減衰
+            // std::cout << "damp" << std::endl;
+            // simulator.damp(shortest_path);
+            // rDn_2_WTSN::edge_iterator eit, eit_end;
+            // for (boost::tie(eit, eit_end) = boost::edges(rdn_2_wtsn); eit != eit_end; ++eit) {
+            //     double c = std::dynamic_pointer_cast<Edge_2_WTSN>(rdn_2_wtsn[*eit])->access_weight_passability_wtsn().get_curr_count();
+            //     if (c != 0) {
+            //         std::cout << *eit << " " << c << std::endl;
+            //     }
+            // }
+
+            // // 増幅
+            // std::cout << "amp" << std::endl;
+            // simulator.amp();
+            // for (boost::tie(eit, eit_end) = boost::edges(rdn_2_wtsn); eit != eit_end; ++eit) {
+            //     double c = std::dynamic_pointer_cast<Edge_2_WTSN>(rdn_2_wtsn[*eit])->access_weight_passability_wtsn().get_curr_count();
+            //     if (c != 0) {
+            //         std::cout << *eit << " " << c << std::endl;
+            //     }
+            // }
+
+            // セットアップ
+            simulator.setup(10, 
+                            1000);
+            
+            // 実行
+            std::cout << "execute simulation" << std::endl;
+            simulator.run();
+
+            // 記録
+            std::cout << "record" << std::endl;
+            std::ofstream config_file("/home/workspace/experiment_wtsn/config.json");
+            simulator.save_config(config_file);
+            config_file.close();
+
+            std::ofstream log_file("/home/workspace/experiment_wtsn/log.csv");
+            simulator.save_log(log_file);
+            log_file.close();
+
+            std::ofstream f {"/home/workspace/commands.txt"};
+            for (auto& edge : simulator.get_living_edges()) {
+                    std::shared_ptr<Node_2> s_ptr = (*simulator.get_net_ptr())[edge]->get_source_ptr();
+                    std::shared_ptr<Node_2> t_ptr = (*simulator.get_net_ptr())[edge]->get_target_ptr();
+                    f << "line" << std::endl;
+                    f << s_ptr->x() << "," << s_ptr->y() << ",0.0" << std::endl;
+                    f << t_ptr->x() << "," << t_ptr->y() << ",0.0" << std::endl;
+            }         
+
+        }
+        case 10: {
+            //** WTSNの性能評価実験テスト **//
+            // ファイルの読み込み
+            std::string file_path = "/home/workspace/data/experiment_wtsn/config_3.json";
+            std::ifstream input_file(file_path);
+            if (!input_file) {
+                std::cerr << "Error opening file: " << file_path << std::endl;
+                return EXIT_FAILURE;
+            }
+            nlohmann::json input_json;
+            input_file >> input_json;
+            input_file.close();
+
+            // 需要点
+            std::vector<Point_2> demand_points;
+            for (const auto& point : input_json["node_coordinates"]) {
+                demand_points.emplace_back(point[0], point[1]);
             }
 
-            // 減衰
-            std::cout << "damp" << std::endl;
-            simulator.damp(shortest_path);
-            rDn_2_WTSN::edge_iterator eit, eit_end;
-            for (boost::tie(eit, eit_end) = boost::edges(rdn_2_wtsn); eit != eit_end; ++eit) {
-                double c = std::dynamic_pointer_cast<Edge_2_WTSN>(rdn_2_wtsn[*eit])->access_weight_passability_wtsn().get_curr_count();
-                if (c != 0) {
-                    std::cout << *eit << " " << c << std::endl;
+            // 需要点のバウンディングボックス
+            double xmin {std::numeric_limits<double>::max()};
+            double xmax {std::numeric_limits<double>::lowest()};
+            double ymin {std::numeric_limits<double>::max()};
+            double ymax {std::numeric_limits<double>::lowest()};
+
+            for (const auto& point : demand_points) {
+                if (point.x() < xmin) xmin = point.x();
+                if (point.x() > xmax) xmax = point.x();
+                if (point.y() < ymin) ymin = point.y();
+                if (point.y() > ymax) ymax = point.y();
+            }
+
+            Polygon_2 bbox;
+            bbox.push_back(Point_2(xmin, ymin));
+            bbox.push_back(Point_2(xmax, ymin));
+            bbox.push_back(Point_2(xmax, ymax));
+            bbox.push_back(Point_2(xmin, ymax));
+
+            // domain
+            double bbox_area = bbox.area();
+            double offset_dist = std::sqrt(bbox_area) * 0.05;
+            std::vector<boost::shared_ptr<Polygon_2>> offset_polygons = CGAL::create_exterior_skeleton_and_offset_polygons_2(offset_dist, bbox);
+            Polygon_2 domain_2 = *(offset_polygons.at(0));
+
+            // ランダムドロネー網
+            rDn_2_WTSN rdn_2_wtsn(50000, domain_2);
+            rdn_2_wtsn.initialize();
+
+            // 障害物との交差判定
+            std::vector<std::shared_ptr<Obstacle_2>> domain_2_ptrs = Obstacle_2::convert_polygon(domain_2, 
+                                                                                                 false, 
+                                                                                                 false, 
+                                                                                                 true, 
+                                                                                                 Obstacle_2::DOMAIN_NAME);
+            rdn_2_wtsn.disconnect_edges(domain_2_ptrs);
+
+            // 設定
+            Random_Engine::set_seed(17);
+            std::vector<double> init_weights {1.001, 1.01, 1.1, 1.2, 1.3, 1.4, 1.5, 2.0, 3.0, 4.0, 5.0};
+            // std::reverse(init_weights.begin(), init_weights.end());
+            std::vector<size_t> damp_required_counts {5, 10, 15};
+            std::vector<size_t> amp_required_counts {15, 30, 45};
+
+            size_t amp_count_standadizer = demand_points.size() * (demand_points.size() - 1);
+
+            for (double init_weight : init_weights) {
+                for (size_t damp_required_count : damp_required_counts) {
+                    for (size_t amp_required_count : amp_required_counts) {
+                        Weight_Passability_WTSN w_region_2 {init_weight, 
+                                                            amp_count_standadizer, 
+                                                            damp_required_count, 
+                                                            amp_required_count};
+                        Region_2_WTSN region_2_wtsn {w_region_2};
+                        std::vector<std::shared_ptr<Region_2_WTSN>> region_ptrs {std::make_shared<Region_2_WTSN>(region_2_wtsn)};
+                        rdn_2_wtsn.weight_edges(region_ptrs);
+
+                        // シミュレータの定義
+                        std::shared_ptr<rDn_2_WTSN> rdn_2_wtsn_ptr = std::make_shared<rDn_2_WTSN>(rdn_2_wtsn);
+                        Simulator_WTSN simulator (domain_2, 
+                                                rdn_2_wtsn_ptr, 
+                                                "/home/workspace/data/experiment_wtsn/config_3.json");
+                        
+                        // セットアップ
+                        simulator.setup(amp_count_standadizer, 
+                                        1000);
+                        
+                        // 実行
+                        simulator.run();
+
+                        // 記録
+                        std::ofstream config_file("/home/workspace/data/experiment_wtsn/config_3_.json");
+                        simulator.save_config(config_file);
+                        config_file.close();
+
+                        std::ofstream log_file("/home/workspace/data/experiment_wtsn/log_3.csv");
+                        simulator.save_log(log_file);
+                        log_file.close();
+
+                        std::ofstream f {"/home/workspace/wtsn_" + 
+                                         std::to_string(init_weight) + 
+                                         "_" +
+                                         std::to_string(damp_required_count) + 
+                                         "_" +
+                                         std::to_string(amp_required_count) + 
+                                         "_" + 
+                                         ".txt"};
+                        for (auto& point : demand_points) {
+                            f << "point" << std::endl;
+                            f << point.x() << "," << point.y() << ",0.0" << std::endl;
+                        }
+                        for (auto& edge : simulator.get_living_edges()) {
+                            std::shared_ptr<Node_2> s_ptr = (*simulator.get_net_ptr())[edge]->get_source_ptr();
+                            std::shared_ptr<Node_2> t_ptr = (*simulator.get_net_ptr())[edge]->get_target_ptr();
+                            f << "line" << std::endl;
+                            f << s_ptr->x() << "," << s_ptr->y() << ",0.0" << std::endl;
+                            f << t_ptr->x() << "," << t_ptr->y() << ",0.0" << std::endl;
+                        }   
+                        
+                        Net_2 simplified_network = simulator.simplify_wtsn();
+
+                        std::ofstream g {"/home/workspace/result_network_" + 
+                                         std::to_string(init_weight) + 
+                                         "_" +
+                                         std::to_string(damp_required_count) + 
+                                         "_" +
+                                         std::to_string(amp_required_count) + 
+                                         "_" + 
+                                         ".txt"};
+                        Net_2::edge_iterator eit, eit_end;
+                        for (boost::tie(eit, eit_end) = boost::edges(simplified_network); eit != eit_end; ++eit) {
+                            auto src = boost::source(*eit, simplified_network);
+                            auto tgt = boost::target(*eit, simplified_network);
+                            auto src_p_ptr = simplified_network[src];
+                            auto tgt_p_ptr = simplified_network[tgt];
+                            g << "line" << std::endl;
+                            g << src_p_ptr->x() << "," << src_p_ptr->y() << ",0.0" << std::endl;
+                            g << tgt_p_ptr->x() << "," << tgt_p_ptr->y() << ",0.0" << std::endl;
+                        }
+
+                        if (!simulator.is_connecting_all_demand_nodes()) {
+                            std::cout << std::scientific 
+                                    << std::setprecision(std::numeric_limits<double>::max_digits10) 
+                                    << init_weight << "," 
+                                    << damp_required_count << "," 
+                                    << amp_required_count << ","
+                                    << "" << "," 
+                                    << "" << std::endl;
+                        } else {
+                            double total_detour = simulator.calc_total_detour(simplified_network, true);
+                            double total_length = simulator.calc_total_length(simplified_network);
+
+                            std::cout << std::scientific 
+                                    << std::setprecision(std::numeric_limits<double>::max_digits10) 
+                                    << init_weight << "," 
+                                    << damp_required_count << "," 
+                                    << amp_required_count << ","
+                                    << total_length << "," 
+                                    << total_detour << std::endl;
+                        }
+
+                    }
                 }
             }
-
-            // 増幅
-            std::cout << "amp" << std::endl;
-            simulator.amp();
-            for (boost::tie(eit, eit_end) = boost::edges(rdn_2_wtsn); eit != eit_end; ++eit) {
-                double c = std::dynamic_pointer_cast<Edge_2_WTSN>(rdn_2_wtsn[*eit])->access_weight_passability_wtsn().get_curr_count();
-                if (c != 0) {
-                    std::cout << *eit << " " << c << std::endl;
+            
+        }
+        case 11: {
+            //** WTSNの性能評価実験 **//
+            std::vector<size_t> case_nums {58};
+            // for (size_t case_num {0}; case_num < 100; case_num++) {
+            for (size_t case_num : case_nums) {
+                // ファイルの読み込み
+                std::string ifile_path = "/home/workspace/data/experiment_wtsn/terminal5/beta0.5/config_" + std::to_string(case_num) + ".json";
+                std::ifstream input_file(ifile_path);
+                if (!input_file) {
+                    std::cerr << "Error opening file: " << ifile_path << std::endl;
+                    continue;
                 }
+                nlohmann::json input_json;
+                input_file >> input_json;
+                input_file.close();
+
+                std::string ofile_path = "/home/workspace/data/experiment_wtsn/terminal5/beta0.5/result_" + std::to_string(case_num) + ".csv";
+                std::ofstream output_file(ofile_path, std::ios::app);
+
+                // 需要点
+                std::vector<Point_2> demand_points;
+                for (const auto& point : input_json["node_coordinates"]) {
+                    demand_points.emplace_back(point[0], point[1]);
+                }
+
+                // 需要点のバウンディングボックス
+                double xmin {std::numeric_limits<double>::max()};
+                double xmax {std::numeric_limits<double>::lowest()};
+                double ymin {std::numeric_limits<double>::max()};
+                double ymax {std::numeric_limits<double>::lowest()};
+
+                for (const auto& point : demand_points) {
+                    if (point.x() < xmin) xmin = point.x();
+                    if (point.x() > xmax) xmax = point.x();
+                    if (point.y() < ymin) ymin = point.y();
+                    if (point.y() > ymax) ymax = point.y();
+                }
+
+                Polygon_2 bbox;
+                bbox.push_back(Point_2(xmin, ymin));
+                bbox.push_back(Point_2(xmax, ymin));
+                bbox.push_back(Point_2(xmax, ymax));
+                bbox.push_back(Point_2(xmin, ymax));
+
+                // domain
+                double bbox_area = bbox.area();
+                double offset_dist = std::sqrt(bbox_area) * 0.05;
+                std::vector<boost::shared_ptr<Polygon_2>> offset_polygons = CGAL::create_exterior_skeleton_and_offset_polygons_2(offset_dist, bbox);
+                Polygon_2 domain_2 = *(offset_polygons.at(0));
+
+                // ランダムドロネー網
+                rDn_2_WTSN rdn_2_wtsn(50000, domain_2);
+                rdn_2_wtsn.initialize();
+
+                // 障害物との交差判定
+                std::vector<std::shared_ptr<Obstacle_2>> domain_2_ptrs = Obstacle_2::convert_polygon(domain_2, 
+                                                                                                    false, 
+                                                                                                    false, 
+                                                                                                    true, 
+                                                                                                    Obstacle_2::DOMAIN_NAME);
+                rdn_2_wtsn.disconnect_edges(domain_2_ptrs);
+
+                // 設定
+                std::uniform_int_distribution<size_t> seed_dist(0, SIZE_MAX);
+                size_t trial_num {3};
+                // std::vector<double> init_weights {1.001, 1.005, 1.01, 1.1, 1.25, 1.5, 2.0, 2.5, 4.0};
+                // std::vector<double> init_weights {1.05, 1.2, 1.75, 3.0, 5.0};
+                std::vector<double> init_weights {1.001, 1.005, 1.01, 1.05, 1.1, 1.2, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0};
+                std::vector<size_t> required_counts {5, 10, 15, 30, 50};
+
+                size_t amp_count_standadizer = demand_points.size() * (demand_points.size() - 1);
+
+                std::chrono::system_clock::time_point start_time = std::chrono::system_clock::now();
+
+                for (double init_weight : init_weights) {
+                    for (size_t d_i {0}; d_i < required_counts.size(); d_i++) {
+                        size_t damp_required_count = required_counts.at(d_i);
+                        for (size_t a_i {d_i}; a_i < required_counts.size(); a_i++) {
+                            size_t amp_required_count = required_counts.at(a_i);
+                            for (size_t trial {0}; trial < trial_num; trial++) {
+                                Weight_Passability_WTSN w_region_2 {init_weight, 
+                                                                    amp_count_standadizer, 
+                                                                    damp_required_count, 
+                                                                    amp_required_count};
+                                Region_2_WTSN region_2_wtsn {w_region_2};
+                                std::vector<std::shared_ptr<Region_2_WTSN>> region_ptrs {std::make_shared<Region_2_WTSN>(region_2_wtsn)};
+                                rdn_2_wtsn.weight_edges(region_ptrs);
+
+                                // シミュレータの定義
+                                std::shared_ptr<rDn_2_WTSN> rdn_2_wtsn_ptr = std::make_shared<rDn_2_WTSN>(rdn_2_wtsn);
+                                Simulator_WTSN simulator (domain_2, 
+                                                        rdn_2_wtsn_ptr, 
+                                                        ifile_path);
+                                
+                                // セットアップ
+                                simulator.setup(amp_count_standadizer, 
+                                                1000);
+                                
+                                // 実行
+                                size_t seed = seed_dist(Random_Engine::get_engine());
+                                Random_Engine::set_seed(seed);
+                                simulator.run();
+
+                                // 記録                                
+                                Net_2 simplified_network = simulator.simplify_wtsn();
+
+                                if (!simulator.is_connecting_all_demand_nodes()) {
+                                    output_file << std::scientific 
+                                            << std::setprecision(std::numeric_limits<double>::max_digits10) 
+                                            << seed << "," 
+                                            << init_weight << "," 
+                                            << damp_required_count << "," 
+                                            << amp_required_count << ","
+                                            << "" << "," 
+                                            << "" << std::endl;
+                                } else {
+                                    // double total_detour = simulator.calc_total_detour(simplified_network, true);
+                                    // double total_length = simulator.calc_total_length(simplified_network);
+
+                                    std::pair <double, double> total_length_and_detour = simulator.evaluate_network(simplified_network, 
+                                                                                                                       false, 
+                                                                                                                       true, 
+                                                                                                                       {}, 
+                                                                                                                       true);
+                                    double total_length = total_length_and_detour.first;
+                                    double total_detour = total_length_and_detour.second;
+
+                                    output_file << std::scientific 
+                                            << std::setprecision(std::numeric_limits<double>::max_digits10) 
+                                            << seed << "," 
+                                            << init_weight << "," 
+                                            << damp_required_count << "," 
+                                            << amp_required_count << ","
+                                            << total_length << "," 
+                                            << total_detour << std::endl;
+                                }
+                            }                           
+                        }
+                    }
+                }
+
+                std::chrono::system_clock::time_point end_time = std::chrono::system_clock::now();
+                std::chrono::duration<double> elapsed_seconds = end_time - start_time;
+
+                output_file.close();
+                std::cout << "Finished case " << case_num << " in " << elapsed_seconds.count() << " seconds)" << std::endl;
+
             }
 
+            break;
+            
+        }
+        case 12: {
+            //** WTSNの性能評価実験 **//
+            const std::string case_num_str = argv[2];
+            const std::string seed_str = argv[3];
+            const std::string init_weight_str = argv[4];
+            const std::string damp_count_str = argv[5];
+            const std::string amp_count_str = argv[6];
+
+            const size_t case_num = std::stoul(case_num_str);
+            const size_t seed = std::stoul(seed_str);
+            const double init_weight = std::stod(init_weight_str);
+            const size_t damp_required_count = std::stoul(damp_count_str);
+            const size_t amp_required_count = std::stoul(amp_count_str);
+            
+            // ファイルの読み込み
+            std::string ifile_path = "/home/workspace/data/experiment_wtsn/terminal5/beta2/config_" + std::to_string(case_num) + ".json";
+            std::ifstream input_file(ifile_path);
+            if (!input_file) {
+                std::cerr << "Error opening file: " << ifile_path << std::endl;
+                return EXIT_FAILURE;
+            }
+            nlohmann::json input_json;
+            input_file >> input_json;
+            input_file.close();
+
+            std::string nwconfig_file_path = "/home/workspace/nwconfig_" + std::to_string(case_num) + ".txt";
+            std::ofstream nwconfig_file(nwconfig_file_path, std::ios::app);
+            std::string log_file_path = "/home/workspace/log_" + std::to_string(case_num) + ".txt";
+            std::ofstream log_file(log_file_path, std::ios::app);
+
+            // 需要点
+            std::vector<Point_2> demand_points;
+            for (const auto& point : input_json["node_coordinates"]) {
+                demand_points.emplace_back(point[0], point[1]);
+            }
+
+            // 需要点のバウンディングボックス
+            double xmin {std::numeric_limits<double>::max()};
+            double xmax {std::numeric_limits<double>::lowest()};
+            double ymin {std::numeric_limits<double>::max()};
+            double ymax {std::numeric_limits<double>::lowest()};
+
+            for (const auto& point : demand_points) {
+                if (point.x() < xmin) xmin = point.x();
+                if (point.x() > xmax) xmax = point.x();
+                if (point.y() < ymin) ymin = point.y();
+                if (point.y() > ymax) ymax = point.y();
+            }
+
+            Polygon_2 bbox;
+            bbox.push_back(Point_2(xmin, ymin));
+            bbox.push_back(Point_2(xmax, ymin));
+            bbox.push_back(Point_2(xmax, ymax));
+            bbox.push_back(Point_2(xmin, ymax));
+
+            // domain
+            double bbox_area = bbox.area();
+            double offset_dist = std::sqrt(bbox_area) * 0.05;
+            std::vector<boost::shared_ptr<Polygon_2>> offset_polygons = CGAL::create_exterior_skeleton_and_offset_polygons_2(offset_dist, bbox);
+            Polygon_2 domain_2 = *(offset_polygons.at(0));
+
+            // ランダムドロネー網
+            rDn_2_WTSN rdn_2_wtsn(50000, domain_2);
+            rdn_2_wtsn.initialize();
+
+            // 障害物との交差判定
+            std::vector<std::shared_ptr<Obstacle_2>> domain_2_ptrs = Obstacle_2::convert_polygon(domain_2, 
+                                                                                                false, 
+                                                                                                false, 
+                                                                                                true, 
+                                                                                                Obstacle_2::DOMAIN_NAME);
+            rdn_2_wtsn.disconnect_edges(domain_2_ptrs);
+
+            // 設定
+            size_t amp_count_standadizer = demand_points.size() * (demand_points.size() - 1);
+
+            std::chrono::system_clock::time_point start_time = std::chrono::system_clock::now();
+
+            Weight_Passability_WTSN w_region_2 {init_weight, 
+                                                amp_count_standadizer, 
+                                                damp_required_count, 
+                                                amp_required_count};
+            Region_2_WTSN region_2_wtsn {w_region_2};
+            std::vector<std::shared_ptr<Region_2_WTSN>> region_ptrs {std::make_shared<Region_2_WTSN>(region_2_wtsn)};
+            rdn_2_wtsn.weight_edges(region_ptrs);
+
+            // シミュレータの定義
+            std::shared_ptr<rDn_2_WTSN> rdn_2_wtsn_ptr = std::make_shared<rDn_2_WTSN>(rdn_2_wtsn);
+            Simulator_WTSN simulator (domain_2, 
+                                    rdn_2_wtsn_ptr, 
+                                    ifile_path);
+            
+            // セットアップ
+            simulator.setup(amp_count_standadizer, 
+                            1000);
+            
+            // 実行
+            Random_Engine::set_seed(seed);
+            simulator.run();
+
+            // 記録                                
+            Net_2 simplified_network = simulator.simplify_wtsn();  
+
+            std::chrono::system_clock::time_point end_time = std::chrono::system_clock::now();
+            std::chrono::duration<double> elapsed_seconds = end_time - start_time;
+            std::cout << "Finished case " << case_num << " in " << elapsed_seconds.count() << " seconds)" << std::endl;
+
+            Net_2::edge_iterator eit, eit_end;
+            for (boost::tie(eit, eit_end) = boost::edges(simplified_network); eit != eit_end; ++eit) {
+                auto src = boost::source(*eit, simplified_network);
+                auto tgt = boost::target(*eit, simplified_network);
+                auto src_p_ptr = simplified_network[src];
+                auto tgt_p_ptr = simplified_network[tgt];
+                nwconfig_file << "line" << std::endl;
+                nwconfig_file << src_p_ptr->x() << "," << src_p_ptr->y() << ",0.0" << std::endl;
+                nwconfig_file << tgt_p_ptr->x() << "," << tgt_p_ptr->y() << ",0.0" << std::endl;
+            }
+            // for (auto& edge : simulator.get_activated_edges()) {
+            // // for (auto& edge : simulator.get_living_edges()) {
+            //         std::shared_ptr<Node_2> s_ptr = (*simulator.get_net_ptr())[edge]->get_source_ptr();
+            //         std::shared_ptr<Node_2> t_ptr = (*simulator.get_net_ptr())[edge]->get_target_ptr();
+            //         nwconfig_file << "line" << std::endl;
+            //         nwconfig_file << s_ptr->x() << "," << s_ptr->y() << ",0.0" << std::endl;
+            //         nwconfig_file << t_ptr->x() << "," << t_ptr->y() << ",0.0" << std::endl;
+            // }     
+
+            nwconfig_file.close();
+
+            simulator.save_log(log_file);
+            log_file.close();
+            
+            if (simulator.is_connecting_all_demand_nodes()) {
+                std::cout << "Evaluation" << std::endl;
+                std::pair <double, double> total_length_and_detour = simulator.evaluate_network(simplified_network, 
+                                                                                                    false, 
+                                                                                                    true, 
+                                                                                                    {}, 
+                                                                                                    true);
+                double total_length = total_length_and_detour.first;
+                double total_detour = total_length_and_detour.second;
+
+                std::cout << std::scientific 
+                        << std::setprecision(std::numeric_limits<double>::max_digits10) 
+                        << seed << "," 
+                        << init_weight << "," 
+                        << damp_required_count << "," 
+                        << amp_required_count << ","
+                        << total_length << "," 
+                        << total_detour << std::endl;
+            }
+
+            break;
+            
         }
 
         default:

@@ -253,7 +253,8 @@ void Simulator_WTSN::amp() {
 
 void Simulator_WTSN::update_edge_sets() {
     // 一旦空にする
-    activated_edges = {};
+    this->activated_edges.clear();
+    this->living_edges.clear();
     
     // エッジを走査
     rDn_2_WTSN::edge_iterator eit, eit_end;
@@ -262,10 +263,10 @@ void Simulator_WTSN::update_edge_sets() {
         
         // 活性化判定
         if (edge_ptr->is_activated()) {
-            activated_edges.insert(*eit);
+            this->activated_edges.insert(*eit);
             // 動的であるか判定
             if (!edge_ptr->access_weight_passability_wtsn().get_is_fixed()) {
-                living_edges.insert(*eit);
+                this->living_edges.insert(*eit);
             }
         }
 
@@ -274,6 +275,7 @@ void Simulator_WTSN::update_edge_sets() {
 }
 
 bool Simulator_WTSN::is_connecting_all_demand_nodes() const {
+    //TODO 正しく動いてなさそうな感じがする
     
     if (activated_edges.empty()) {
         return false;
@@ -606,7 +608,20 @@ std::pair<double, double> Simulator_WTSN::evaluate_network(Net_2& result_network
                     true, 
                     false, {}
                 );
+
+                if (sp_ij.empty()) {
+                    throw std::runtime_error(
+                        "Could not find a shortest path from " + std::to_string(Oi) + " to " + std::to_string(Dj) + ".\n"
+                        "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+                    );    
+                }
+
                 double detour_ij = sp_ij.back().second;
+
+                // std::cout << "Shortest path from " << result_network[Oi]->x() << "," << result_network[Oi]->y() 
+                // << " to " 
+                // << result_network[Dj]->x() << "," << result_network[Dj]->y() << ": ";
+                // std::cout << detour_ij << std::endl;
 
                 if (is_weighted_detour) {
                     total_detour += this->get_trans_prob_matrix().at(i).at(j) * detour_ij;

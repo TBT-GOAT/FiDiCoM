@@ -59,7 +59,13 @@ void Edge_2_WTSN::assign_weight_passability_wtsn(const Weight_Passability_WTSN w
 }
 
 bool Edge_2_WTSN::is_activated() {
+    
+    if (access_weight_passability_wtsn().get_is_fixed()) {
+        return true;
+    }
+
     return weight_passability_wtsn.get_curr_count() 
             >
            activated_ratio * weight_passability_wtsn.get_damp_required_count(); 
+           
 }

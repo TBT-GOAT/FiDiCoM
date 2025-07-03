@@ -236,6 +236,25 @@ class Net_3 : public Graph_3 {
             const std::vector<Net_3::vertex_descriptor> prohibited_vertices={}
         ) const;
         /*************************************************
+         * @brief 最短経路を計算する
+         * 
+         * @param source 
+         * @param target 
+         * @param mode 
+         * @param using_obstacle 
+         * @param using_weight 
+         * @param prohibited_vertices 
+         * @return std::deque<std::pair<Net_3::vertex_descriptor, double>>
+         *************************************************/
+        std::deque<std::pair<Net_3::vertex_descriptor, double>> calculate_shortest_path(
+            const Net_3::vertex_descriptor source, 
+            const Net_3::vertex_descriptor target, 
+            const size_t mode, 
+            const bool using_obstacle=true, 
+            const bool using_weight=true,
+            const std::vector<Net_3::vertex_descriptor> prohibited_vertices={}
+        ) const;
+        /*************************************************
          * @brief 再帰的に可視の頂点を探索する
          * 
          * @param root 

@@ -45,6 +45,9 @@ typedef CGAL::Surface_mesh<Point_3> Surface_mesh;
 // include spherical geometry util
 #include "core/geom/spherical_geom_util.h"
 
+// include astar_heuristic
+#include "core/net/astar_heuristic_3.h"
+
 //* Constructor *//
 Net_3::Net_3(const int node_num) :
     node_num(node_num)
@@ -279,12 +282,14 @@ std::vector<std::pair<Net_3::vertex_descriptor, double>> Net_3::calculate_shorte
     size_t num_vertices = boost::num_vertices(*this);
     std::vector<double> distances(num_vertices, std::numeric_limits<double>::infinity());
     std::vector<Net_3::vertex_descriptor> predecessors(num_vertices);
+    std::vector<boost::default_color_type> colors(num_vertices);
 
     // Dijkstra法
     boost::dijkstra_shortest_paths(*this, 
                                    source, 
                                    boost::predecessor_map(predecessors.data())
                                    .distance_map(distances.data())
+                                   .color_map(colors.data())
                                    .weight_map(weight_map));
 
     // 出力    
@@ -294,6 +299,58 @@ std::vector<std::pair<Net_3::vertex_descriptor, double>> Net_3::calculate_shorte
     }
 
     return spt;
+
+}
+
+std::deque<std::pair<Net_3::vertex_descriptor, double>> Net_3::calculate_shortest_path(
+    const Net_3::vertex_descriptor source, 
+    const Net_3::vertex_descriptor target, 
+    const size_t mode, 
+    const bool using_obstacle, 
+    const bool using_weight,
+    const std::vector<Net_3::vertex_descriptor> prohibited_vertices) const 
+{
+    // エッジの重みの設定
+    Weight_Mapper_3 weight_mapper(*this, 
+                                  mode, 
+                                  using_obstacle, 
+                                  using_weight, 
+                                  prohibited_vertices);
+    auto weight_map = boost::make_function_property_map<Net_3::edge_descriptor>(
+        [&](Net_3::edge_descriptor e) { return weight_mapper(e); }
+    );
+
+    // 結果を格納する配列の初期化
+    size_t num_vertices = boost::num_vertices(*this);
+    std::vector<double> distances(num_vertices, std::numeric_limits<double>::infinity());
+    std::vector<Net_3::vertex_descriptor> predecessors(num_vertices);
+    std::vector<boost::default_color_type> colors(num_vertices);
+
+    try {
+        boost::astar_search(
+            *this, 
+            source, 
+            Astar_Heuristic_3(*this, target), 
+            boost::predecessor_map(predecessors.data())
+            .distance_map(distances.data())
+            .weight_map(weight_map)
+            .color_map(colors.data())
+            .visitor(Astar_Goal_Visitor_3(target))
+        );
+    } catch (const Astar_Found_Goal_3&) {
+        // 経路復元
+        std::deque<std::pair<Net_3::vertex_descriptor, double>> path;
+        for (Net_3::vertex_descriptor v = target; v != source; v = predecessors[v]) {
+            path.push_front(std::make_pair(v, distances[v]));
+        }
+        path.push_front(std::make_pair(source, distances[source]));
+
+        return path;
+
+    }
+
+    // 最短路が見つからなかった場合
+    return std::deque<std::pair<Net_3::vertex_descriptor, double>> ();
 
 }
 

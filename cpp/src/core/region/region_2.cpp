@@ -8,8 +8,23 @@
 
 
 //** Constructor **//
+Region_2::Region_2() : 
+    weight_visibility(1.0), 
+    weight_passability(1.0)
+{
+    // 平面すべて ≒ 極端に大きな矩形
+    double min = std::numeric_limits<double>::lowest();
+    double max = std::numeric_limits<double>::max();
+
+    this->push_back(Point_2(min, min));
+    this->push_back(Point_2(max, min));
+    this->push_back(Point_2(max, max));
+    this->push_back(Point_2(min, max));
+}
 Region_2::Region_2(const Polygon_2 polygon_2) : 
-    Polygon_2(polygon_2)
+    Polygon_2(polygon_2), 
+    weight_visibility(1.0),
+    weight_passability(1.0)
 {}
 
 Region_2::Region_2(const Polygon_2 polygon_2, 

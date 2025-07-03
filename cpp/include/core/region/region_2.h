@@ -21,6 +21,7 @@ class Region_2 : public Polygon_2 {
 
     public:
         //** Constructor **//
+        Region_2();
         Region_2(const Polygon_2 polygon_2);
         Region_2(const Polygon_2 polygon_2, 
                  const double weight_visibility, 

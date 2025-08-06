@@ -33,6 +33,9 @@ using json = nlohmann::json;
 #include "domain/wtsn/rDn_2_wtsn.h"
 #include "domain/wtsn/simulator_wtsn.h"
 
+// include project
+#include "project/TRF_SI_2025/simulation_msu.h"
+
 
 int main(int argc, char *argv[]) {
 
@@ -856,6 +859,12 @@ int main(int argc, char *argv[]) {
             std::vector<std::shared_ptr<Region_2_WTSN>> region_ptrs {std::make_shared<Region_2_WTSN>(region_2_wtsn)};
             rdn_2_wtsn.weight_edges(region_ptrs);
 
+            Net_2::edge_iterator eit, eit_end;
+            for (boost::tie(eit, eit_end) = boost::edges(rdn_2_wtsn); eit != eit_end; ++eit) {
+                double default_init_weight = std::dynamic_pointer_cast<Edge_2_WTSN>(rdn_2_wtsn[*eit])->access_weight_passability_wtsn().get_default_init_weight();
+                std::cout << *eit << " " << default_init_weight << std::endl;
+            }
+
             // シミュレータの定義
             std::cout << "setup simulator" << std::endl;
             std::shared_ptr<rDn_2_WTSN> rdn_2_wtsn_ptr = std::make_shared<rDn_2_WTSN>(rdn_2_wtsn);
@@ -1068,7 +1077,7 @@ int main(int argc, char *argv[]) {
                             g << tgt_p_ptr->x() << "," << tgt_p_ptr->y() << ",0.0" << std::endl;
                         }
 
-                        if (!simulator.is_connecting_all_demand_nodes()) {
+                        if (!simulator.has_valid_result()) {
                             std::cout << std::scientific 
                                     << std::setprecision(std::numeric_limits<double>::max_digits10) 
                                     << init_weight << "," 
@@ -1200,7 +1209,7 @@ int main(int argc, char *argv[]) {
                                 // 記録                                
                                 Net_2 simplified_network = simulator.simplify_wtsn();
 
-                                if (!simulator.is_connecting_all_demand_nodes()) {
+                                if (!simulator.has_valid_result()) {
                                     output_file << std::scientific 
                                             << std::setprecision(std::numeric_limits<double>::max_digits10) 
                                             << seed << "," 
@@ -1363,21 +1372,13 @@ int main(int argc, char *argv[]) {
                 nwconfig_file << src_p_ptr->x() << "," << src_p_ptr->y() << ",0.0" << std::endl;
                 nwconfig_file << tgt_p_ptr->x() << "," << tgt_p_ptr->y() << ",0.0" << std::endl;
             }
-            // for (auto& edge : simulator.get_activated_edges()) {
-            // // for (auto& edge : simulator.get_living_edges()) {
-            //         std::shared_ptr<Node_2> s_ptr = (*simulator.get_net_ptr())[edge]->get_source_ptr();
-            //         std::shared_ptr<Node_2> t_ptr = (*simulator.get_net_ptr())[edge]->get_target_ptr();
-            //         nwconfig_file << "line" << std::endl;
-            //         nwconfig_file << s_ptr->x() << "," << s_ptr->y() << ",0.0" << std::endl;
-            //         nwconfig_file << t_ptr->x() << "," << t_ptr->y() << ",0.0" << std::endl;
-            // }     
 
             nwconfig_file.close();
 
             simulator.save_log(log_file);
             log_file.close();
             
-            if (simulator.is_connecting_all_demand_nodes()) {
+            if (simulator.has_valid_result()) {
                 std::cout << "Evaluation" << std::endl;
                 std::pair <double, double> total_length_and_detour = simulator.evaluate_network(simplified_network, 
                                                                                                     false, 
@@ -1399,6 +1400,18 @@ int main(int argc, char *argv[]) {
 
             break;
             
+        }
+        case 13: {
+            // Michigan State Universityのシミュレーション
+            std::chrono::system_clock::time_point start_time = std::chrono::system_clock::now();
+
+            std::vector<std::string> args(argv, argv + argc);
+            run_simulation_msu(args);
+
+            std::chrono::system_clock::time_point end_time = std::chrono::system_clock::now();
+            std::chrono::duration<double> elapsed_seconds = end_time - start_time;
+            std::cout << "\nFinished in " << elapsed_seconds.count() << " seconds)" << std::endl;
+
         }
 
         default:

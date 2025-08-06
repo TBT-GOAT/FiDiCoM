@@ -3,9 +3,6 @@
 
 cmake_minimum_required(VERSION 3.1...3.15)
 
-project( random-spatial-network-planning )
-
-
 # CGAL and its components
 find_package( CGAL QUIET COMPONENTS  )
 
@@ -43,3 +40,4 @@ find_package(pagmo REQUIRED)
 add_subdirectory(app)
 add_subdirectory(core)
 add_subdirectory(domain)
+add_subdirectory(project)

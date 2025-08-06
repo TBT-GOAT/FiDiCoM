@@ -25,4 +25,5 @@ target_link_libraries(main PRIVATE
     core_weight_mapper
     domain_flp
     domain_wtsn
+    project_trfsi2025
 )

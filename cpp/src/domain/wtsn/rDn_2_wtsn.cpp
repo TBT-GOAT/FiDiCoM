@@ -80,15 +80,19 @@ void rDn_2_WTSN::weight_edges(std::vector<std::shared_ptr<Region_2_WTSN>> region
     rDn_2_WTSN::edge_iterator eit, eit_end;
     //TODO エッジの数 × 領域の数 だけ計算している．OpenCLを使って省力化したい
     for (boost::tie(eit, eit_end) = boost::edges(*this); eit != eit_end; ++eit) {
+        bool is_in_region = false;
         for (auto region_ptr : region_ptrs) {
+            // 先に登録されている領域の重みを優先する
             if (region_ptr->is_intersecting(*(*this)[*eit])) {
-                // 重いものを優先
-                if (std::dynamic_pointer_cast<Edge_2_WTSN>((*this)[*eit])->access_weight_passability_wtsn().get_init_weight(0.0) < region_ptr->get_weight_passability()) {
-                    std::dynamic_pointer_cast<Edge_2_WTSN>((*this)[*eit])->assign_weight_passability_wtsn(region_ptr->get_weight_passability_wtsn());
-                }
-            } else {
-                std::dynamic_pointer_cast<Edge_2_WTSN>((*this)[*eit])->assign_weight_passability_wtsn();
+                std::dynamic_pointer_cast<Edge_2_WTSN>((*this)[*eit])->assign_weight_passability_wtsn(region_ptr->get_weight_passability_wtsn());
+                is_in_region = true;
+                break;
             }
+        }
+        
+        // どの領域とも交差しなかった場合は，デフォルトの重みを設定する
+        if (!is_in_region) {
+            std::dynamic_pointer_cast<Edge_2_WTSN>((*this)[*eit])->assign_weight_passability_wtsn();
         }
     }
 }

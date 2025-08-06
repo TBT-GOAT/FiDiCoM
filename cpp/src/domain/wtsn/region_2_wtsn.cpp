@@ -10,6 +10,11 @@ Region_2_WTSN::Region_2_WTSN(const Polygon_2 polygon_2,
     Region_2(polygon_2), 
     weight_passability_wtsn(weight_passability_wtsn)
 {}
+Region_2_WTSN::Region_2_WTSN(const std::vector<Point_2>& region_points, 
+                             const Weight_Passability_WTSN weight_passability_wtsn) :
+    Region_2(region_points),
+    weight_passability_wtsn(weight_passability_wtsn)
+{}
 Region_2_WTSN::Region_2_WTSN(const Weight_Passability_WTSN weight_passability_wtsn) : 
     Region_2(),
     weight_passability_wtsn(weight_passability_wtsn)

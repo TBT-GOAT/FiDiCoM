@@ -25,7 +25,39 @@ Region_2::Region_2(const Polygon_2 polygon_2) :
     Polygon_2(polygon_2), 
     weight_visibility(1.0),
     weight_passability(1.0)
-{}
+{
+    // 領域が自己交差のない閉領域かチェックする
+    if (!polygon_2.is_simple()) {
+        throw std::runtime_error(
+            "The provided domain is not a simple polygon.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    // 領域の頂点の順序を反時計回りに設定する
+    if (polygon_2.is_clockwise_oriented()) {
+        this->reverse_orientation();
+    }
+}
+
+Region_2::Region_2(const std::vector<Point_2>& region_points) : 
+    Polygon_2(region_points.front() == region_points.back() ? 
+              Polygon_2(region_points.begin(), region_points.end() - 1) : 
+              Polygon_2(region_points.begin(), region_points.end()))
+{
+    // 領域が自己交差のない閉領域かチェックする
+    if (!this->is_simple()) {
+        throw std::runtime_error(
+            "The provided domain is not a simple polygon.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    // 領域の頂点の順序を反時計回りに設定する
+    if (this->is_clockwise_oriented()) {
+        this->reverse_orientation();
+    }
+}
 
 Region_2::Region_2(const Polygon_2 polygon_2, 
          const double weight_visibility, 
@@ -33,7 +65,43 @@ Region_2::Region_2(const Polygon_2 polygon_2,
     Polygon_2(polygon_2), 
     weight_visibility(weight_visibility), 
     weight_passability(weight_passability)
-{}
+{
+    // 領域が自己交差のない閉領域かチェックする
+    if (!polygon_2.is_simple()) {
+        throw std::runtime_error(
+            "The provided domain is not a simple polygon.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    // 領域の頂点の順序を反時計回りに設定する
+    if (polygon_2.is_clockwise_oriented()) {
+        this->reverse_orientation();
+    }
+}
+
+Region_2::Region_2(const std::vector<Point_2>& region_points, 
+         const double weight_visibility, 
+         const double weight_passability) :
+    Polygon_2(region_points.front() == region_points.back() ? 
+              Polygon_2(region_points.begin(), region_points.end() - 1) : 
+              Polygon_2(region_points.begin(), region_points.end())), 
+    weight_visibility(weight_visibility), 
+    weight_passability(weight_passability)
+{
+    // 領域が自己交差のない閉領域かチェックする
+    if (!this->is_simple()) {
+        throw std::runtime_error(
+            "The provided domain is not a simple polygon.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    // 領域の頂点の順序を反時計回りに設定する
+    if (this->is_clockwise_oriented()) {
+        this->reverse_orientation();
+    }
+}
 
 //** Getter **//
 double Region_2::get_weight_visibility() const {

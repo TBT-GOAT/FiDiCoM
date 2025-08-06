@@ -20,8 +20,10 @@ using json = nlohmann::json;
 Simulator_WTSN::Simulator_WTSN(const Polygon_2 domain, 
                                const std::shared_ptr<rDn_2_WTSN> net_ptr, 
                                const std::vector<Point_2> demand_points, 
-                               const std::vector<std::vector<double>> demand_matrix) :
+                               const std::vector<std::vector<double>> demand_matrix, 
+                               const std::vector<Polygon_2> holes) :
     domain(domain), 
+    holes(holes),
     net_ptr(net_ptr), 
     demand_points(demand_points)
 {
@@ -29,7 +31,22 @@ Simulator_WTSN::Simulator_WTSN(const Polygon_2 domain,
     find_demand_nodes(demand_points);
 
     // trans_prob_matrix
-    trans_prob_matrix = normalize_matrix(demand_matrix);
+    if (demand_matrix.empty()) {
+        // デフォルトの移動確率行列を設定
+        size_t demand_num = demand_points.size();
+        trans_prob_matrix = calc_uniform_trans_prob_matrix(demand_num);
+    } else {
+        // 入力された移動確率行列を設定
+        if (demand_matrix.size() != demand_points.size() || 
+            demand_matrix[0].size() != demand_points.size()) {
+            throw std::runtime_error(
+                "Input demand matrix size does not match the number of demand points.\n"
+                "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+            );
+        }
+        trans_prob_matrix = normalize_matrix(demand_matrix);
+    }
+    
 }
 
 Simulator_WTSN::Simulator_WTSN(const Polygon_2 domain, 
@@ -42,22 +59,35 @@ Simulator_WTSN::Simulator_WTSN(const Polygon_2 domain,
     input_file >> j;
 
     // demand_nodes
-    for (const auto& point : j["node_coordinates"]) {
-        demand_points.emplace_back(point[0], point[1]);
-    }
+    if (!j.contains("node_coordinates")) {
+        throw std::runtime_error(
+            "Input file does not contain 'node_coordinates'.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    } else {
+        for (const auto& point : j["node_coordinates"]) {
+            demand_points.emplace_back(point[0], point[1]);
+        }
 
-    find_demand_nodes(demand_points);
+        find_demand_nodes(demand_points);
+    }
 
     // trans_prob_matrix
-    for (const auto& row : j["weight_matrix"]) {
-        std::vector<double> vec_row;
-        for (const auto& val : row) {
-            vec_row.push_back(val);
+    if (j.contains("weight_matrix")) {
+        for (const auto& row : j["weight_matrix"]) {
+            std::vector<double> vec_row;
+            for (const auto& val : row) {
+                vec_row.push_back(val);
+            }
+            trans_prob_matrix.push_back(vec_row);
         }
-        trans_prob_matrix.push_back(vec_row);
-    }
 
-    trans_prob_matrix = normalize_matrix(trans_prob_matrix);
+        trans_prob_matrix = normalize_matrix(trans_prob_matrix);
+    } else {
+        // デフォルトの移動確率行列を設定
+        size_t demand_num = demand_points.size();
+        trans_prob_matrix = calc_uniform_trans_prob_matrix(demand_num);
+    }
     
 }
 
@@ -78,14 +108,41 @@ Simulator_WTSN::Simulator_WTSN(const Polygon_2 domain,
 }
 
 //** Constructor Support Functions **//
+bool Simulator_WTSN::is_in_domain(const Point_2& p) const {
+    // 対象領域内に点があるか判定する
+    if (domain.bounded_side(p) != CGAL::ON_UNBOUNDED_SIDE) {
+
+        for (const auto& hole : holes) {
+            if (hole.bounded_side(p) == CGAL::ON_BOUNDED_SIDE) {
+                // 穴の中にある場合はfalse
+                return false;
+            }
+        }
+
+        return true;
+    
+    } else {
+        // 対象領域外にある場合はfalse
+        return false;
+    }
+}
+
 void Simulator_WTSN::find_demand_nodes(std::vector<Point_2> demand_points) {
     
     for (auto& demand_point : demand_points) {
         rDn_2_WTSN::vertex_descriptor nearest_vertex = this->net_ptr->find_nearest_node(demand_point);
         
-        if (domain.bounded_side(*(*net_ptr)[nearest_vertex]) != CGAL::ON_UNBOUNDED_SIDE) {
+        if (this->is_in_domain(*(*net_ptr)[nearest_vertex])) {
             // 対称領域内に最近点を発見
+            // 穴の中にないかを確認
+            //TODO Polygon_with_holes_2を使う
+            for (const auto& hole : holes) {
+
+            }
+            
             demand_nodes.push_back(nearest_vertex);
+            continue;
+
         } else {
             // 対称領域外に最近点を発見
             // 最近点に最も近いノードの中で対象領域内にあるものを代替
@@ -103,13 +160,21 @@ void Simulator_WTSN::find_demand_nodes(std::vector<Point_2> demand_points) {
 
             for (const auto& v_and_d : spt) {
                 
-                if (domain.bounded_side(*(*net_ptr)[v_and_d.first]) != CGAL::ON_UNBOUNDED_SIDE) {
+                if (this->is_in_domain(*(*net_ptr)[v_and_d.first])) {
                     demand_nodes.push_back(v_and_d.first);
                     break;
                 }
             }
 
+            continue;
+
         }
+
+        // 対象領域内にノードが見つからなかった場合はエラー
+        throw std::runtime_error(
+            "Could not find any nodes in the domain for (" + std::to_string(demand_point.x()) + "," + std::to_string(demand_point.y()) + ").\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
 
     }
 
@@ -120,6 +185,24 @@ void Simulator_WTSN::find_demand_nodes(std::vector<Point_2> demand_points) {
             "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
         );
     }
+
+}
+
+std::vector<std::vector<double>> Simulator_WTSN::calc_uniform_trans_prob_matrix(size_t demand_num) const {
+    std::vector<std::vector<double>> uniform_matrix(demand_num, 
+                                                    std::vector<double>(demand_num)
+                                                    );
+    for (size_t i {0}; i < demand_num; ++i) {
+        for (size_t j {0}; j < demand_num; ++j) {
+            if (i == j) {
+                uniform_matrix[i][j] = 0.0; // 自分自身への移動確率は0
+            } else {
+                uniform_matrix[i][j] = 1.0 / (demand_num * (demand_num - 1)); // 等確率
+            }
+        }
+    }
+
+    return uniform_matrix;
 
 }
 
@@ -333,7 +416,9 @@ void Simulator_WTSN::run() {
             && 
            iter < max_iteration) 
     {
-
+        
+        std::cout << "\r" << iter << " / " << max_iteration << std::flush;
+        
         // 歩行者を変更
         Weight_Passability_WTSN::get_pedestrian().change_pedestrian();
 
@@ -342,6 +427,12 @@ void Simulator_WTSN::run() {
         rDn_2_WTSN::vertex_descriptor O = OD.first;
         rDn_2_WTSN::vertex_descriptor D = OD.second;
         std::deque<rDn_2_WTSN::vertex_descriptor> pedestrian_path = calc_pedestrian_path(O, D);
+
+        if (pedestrian_path.empty()) {
+            // 歩行軌跡が見つからない場合はスキップ
+            std::cout << "No pedestrian path found." << std::endl;
+            continue;
+        }
 
         // 歩行軌跡上のエッジの重みを減衰
         damp(pedestrian_path);
@@ -390,6 +481,10 @@ void Simulator_WTSN::run() {
 
     }
 
+}
+
+bool Simulator_WTSN::has_valid_result() const {
+    return is_connecting_all_demand_nodes();
 }
 
 //** Analysis Functions **//

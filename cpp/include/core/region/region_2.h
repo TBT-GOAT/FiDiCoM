@@ -23,7 +23,11 @@ class Region_2 : public Polygon_2 {
         //** Constructor **//
         Region_2();
         Region_2(const Polygon_2 polygon_2);
+        Region_2(const std::vector<Point_2>& region_points);
         Region_2(const Polygon_2 polygon_2, 
+                 const double weight_visibility, 
+                 const double weight_passability);
+        Region_2(const std::vector<Point_2>& region_points, 
                  const double weight_visibility, 
                  const double weight_passability);
         

@@ -17,8 +17,9 @@
 
 class Simulator_WTSN {
     private:
-    public: //TODO 消去
         Polygon_2 domain;                            // 対象領域
+        std::vector<Polygon_2> holes;                // 対象領域の穴（建物など）
+                                                     //TODO CGAL Polygon_with_holes_2を使う
         std::shared_ptr<rDn_2_WTSN> net_ptr;         // ネットワーク
         std::vector<Point_2> demand_points;          // 移動需要の入力点
         std::vector<rDn_2_WTSN::vertex_descriptor> demand_nodes;    // 移動の需要点
@@ -51,12 +52,28 @@ class Simulator_WTSN {
 
         //** Constructor Support Functions **//
         /*************************************************
+         * @brief 対象領域内に点があるか判定する
+         * TODO 対象領域に穴がある場合の対応
+         * 
+         * @param p 
+         * @return true 
+         * @return false 
+         *************************************************/
+        bool is_in_domain(const Point_2& p) const;
+        /*************************************************
          * @brief 需要点に対応するノードを探索する
          * 
          * @param demand_points 
          * @return std::vector<rDn_2_WTSN::vertex_descriptor> 
          *************************************************/
         void find_demand_nodes(std::vector<Point_2> demand_points);
+        /*************************************************
+         * @brief 等確率の移動確率行列を計算する
+         * 
+         * @param demand_num 
+         * @return std::vector<std::vector<double>> 
+         *************************************************/
+        std::vector<std::vector<double>> calc_uniform_trans_prob_matrix(size_t demand_num) const;
         
         //** Simulation Functions **//
         /*************************************************
@@ -119,7 +136,9 @@ class Simulator_WTSN {
         Simulator_WTSN(const Polygon_2 domain, 
                        const std::shared_ptr<rDn_2_WTSN> net_ptr, 
                        const std::vector<Point_2> demand_points, 
-                       const std::vector<std::vector<double>> demand_matrix);
+                       const std::vector<std::vector<double>> demand_matrix={},
+                       const std::vector<Polygon_2> holes={});
+        //TODO domainもinput_fileから読み込む
         Simulator_WTSN(const Polygon_2 domain, 
                        const std::shared_ptr<rDn_2_WTSN> net_ptr, 
                        std::ifstream& input_file);
@@ -150,6 +169,13 @@ class Simulator_WTSN {
          * 
          *************************************************/
         void run();
+        /*************************************************
+         * @brief 有効な結果が得られているか判定する
+         * 
+         * @return true 
+         * @return false 
+         *************************************************/
+        bool has_valid_result() const;
 
         //** Analysis Functions **//
         /*************************************************

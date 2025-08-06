@@ -90,6 +90,31 @@ Net_2::Net_2(const int node_num, const Polygon_2 domain) :
 
 }
 
+Net_2::Net_2(const int node_num, const std::vector<Point_2>& domain_points) :
+    node_num(node_num)
+{
+    // 対象領域が自己交差のない閉領域かチェックする
+    if (domain_points.front() == domain_points.back()) {
+        // 最初と最後の点が同じときは塀領域とみなす
+        domain = Polygon_2(domain_points.begin(), domain_points.end() - 1);
+    } else {
+        domain = Polygon_2(domain_points.begin(), domain_points.end());
+    }
+    
+    if (!domain.is_simple()) {
+        throw std::runtime_error(
+            "The provided domain is not a simple polygon.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    // 対象領域の頂点の順序を反時計回りに設定する
+    if (domain.is_clockwise_oriented()) {
+        domain.reverse_orientation();
+    }
+    
+}
+
 //** Getter **//
 int Net_2::get_node_num() const {
     return node_num;
@@ -301,6 +326,14 @@ std::deque<std::pair<Net_2::vertex_descriptor, double>> Net_2::calculate_shortes
         [&](Net_2::edge_descriptor e) { return weight_mapper(e); }
     );
 
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> path;
+
+    if (source == target) {
+        // 始点と終点が同じ場合
+        path.push_front(std::make_pair(source, 0.0));
+        return path;
+    }
+    
     // 結果を格納する配列の初期化
     size_t num_vertices = boost::num_vertices(*this);
     std::vector<double> distances(num_vertices, std::numeric_limits<double>::infinity());
@@ -320,7 +353,14 @@ std::deque<std::pair<Net_2::vertex_descriptor, double>> Net_2::calculate_shortes
         );
     } catch (const Astar_Found_Goal_2&) {
         // 経路復元
-        std::deque<std::pair<Net_2::vertex_descriptor, double>> path;
+
+        if (distances[target] == std::numeric_limits<double>::infinity()
+            ||
+            predecessors[target] == target) {
+            // ターゲットに到達できない場合
+            return path;
+        }
+
         for (Net_2::vertex_descriptor v = target; v != source; v = predecessors[v]) {
             path.push_front(std::make_pair(v, distances[v]));
         }
@@ -332,6 +372,50 @@ std::deque<std::pair<Net_2::vertex_descriptor, double>> Net_2::calculate_shortes
 
     // 最短路が見つからなかった場合
     return std::deque<std::pair<Net_2::vertex_descriptor, double>> ();
+
+}
+
+double Net_2::calculate_path_length(
+    const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path,
+    const size_t mode, 
+    const bool using_obstacle, 
+    const bool using_weight
+) const {
+    double length = 0.0;
+    
+    if (path.empty()) {
+        std::runtime_error(
+            "The path is empty.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+    
+    if (path.size() == 1) {
+        // 1つの頂点のみの場合
+        return length;
+    }
+
+    // エッジの重みの設定
+    Weight_Mapper_2 weight_mapper(*this, 
+                                  mode, 
+                                  using_obstacle, 
+                                  using_weight);
+    
+    // 長さの合算
+    std::pair<Net_2::edge_descriptor, bool> edge_existance;
+    for (size_t i = 0; i < path.size() - 1; ++i) {
+        edge_existance = boost::edge(path[i].first, path[i + 1].first, *this);
+
+        if (!edge_existance.second) {
+            throw std::runtime_error("Invalid adjacency (" + std::to_string(path[i].first) + " and " + std::to_string(path[i + 1].first) + ").\n"
+                                     "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
+        }
+
+        length += weight_mapper(edge_existance.first);
+
+    }
+
+    return length;
 
 }
 

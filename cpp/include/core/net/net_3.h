@@ -255,6 +255,21 @@ class Net_3 : public Graph_3 {
             const std::vector<Net_3::vertex_descriptor> prohibited_vertices={}
         ) const;
         /*************************************************
+         * @brief 経路の長さを計算する
+         * 
+         * @param path 
+         * @param mode 
+         * @param using_obstacle 
+         * @param using_weight 
+         * @return double 
+         *************************************************/
+        double calculate_path_length(
+            const std::deque<std::pair<Net_3::vertex_descriptor, double>>& path,
+            const size_t mode, 
+            const bool using_obstacle=true, 
+            const bool using_weight=true
+        ) const;
+        /*************************************************
          * @brief 再帰的に可視の頂点を探索する
          * 
          * @param root 

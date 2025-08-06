@@ -141,10 +141,18 @@ class Net_2 : public Graph_2 {
          * @param domain 
          *************************************************/
         Net_2(const int node_num, const Polygon_2 domain);
+        /*************************************************
+         * @brief Construct a new Net_2 object
+         * 
+         * @param node_num 
+         * @param domain_points 
+         *************************************************/
+        Net_2(const int node_num, const std::vector<Point_2>& domain_points);
         
         //** Getter **//
         /*************************************************
          * @brief 対象領域内のノード数を取得する
+         * TODO 全体のノード数と混同しやすい。要解消。
          * 
          * @return int 
          *************************************************/
@@ -247,6 +255,21 @@ class Net_2 : public Graph_2 {
             const bool using_obstacle=true, 
             const bool using_weight=true,
             const std::vector<Net_2::vertex_descriptor> prohibited_vertices={}
+        ) const;
+        /*************************************************
+         * @brief 経路の長さを計算する
+         * 
+         * @param path 
+         * @param mode 
+         * @param using_obstacle 
+         * @param using_weight 
+         * @return double 
+         *************************************************/
+        double calculate_path_length(
+            const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path,
+            const size_t mode, 
+            const bool using_obstacle=true, 
+            const bool using_weight=true
         ) const;
         /*************************************************
          * @brief 再帰的に可視の頂点を探索する

@@ -464,6 +464,8 @@ void Net_3::search_visible_vertices(
                 // 認識できる距離にある
                 visible_vertices.insert(child);
                 next_parents_vec.push_back(child);
+            } else {
+                std::cout << "out of eyesight" << std::endl;
             }
         }
     }

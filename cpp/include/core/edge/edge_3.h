@@ -52,7 +52,7 @@ class Edge_3 : public Segment_3{
         
         std::shared_ptr<Node_3> source_ptr; // 始点
         std::shared_ptr<Node_3> target_ptr; // 終点
-        double length;                      // 長さ
+        double length = -DBL_MAX;           // 長さ
         bool is_visible = true;             // 可視かどうか
         bool is_passable = true;            // 通過可能かどうか
         bool is_dummy = false;              // ダミーかどうか

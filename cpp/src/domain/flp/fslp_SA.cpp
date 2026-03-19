@@ -170,6 +170,7 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
     size_t target_elem_index = elem_dist(Random_Engine::get_engine());
 
     std::uniform_real_distribution<> jump_dist(0.0, 1.0);
+    double jump_rate_sample = jump_dist(Random_Engine::get_engine());
 
     size_t target_facility_index;
     size_t target_sign_index;
@@ -179,7 +180,7 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
         target_facility_index = target_elem_index; 
         Net_2::vertex_descriptor target_facility = facilities.at(target_facility_index);
 
-        if (jump_rate < elem_dist(Random_Engine::get_engine())) {
+        if (jump_rate_sample < jump_rate) {
             // 需要点から選ぶ
             std::uniform_int_distribution<> demand_dist(0, demands.size() - 1);
             size_t target_demand_index = demand_dist(Random_Engine::get_engine());
@@ -211,7 +212,7 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
         target_sign_index = target_elem_index - facility_num;
         Net_2::vertex_descriptor target_sign = signs.at(target_sign_index);
 
-        if (jump_rate < elem_dist(Random_Engine::get_engine())) {
+        if (jump_rate_sample < jump_rate) {
             // 需要点から選ぶ
             std::uniform_int_distribution<> demand_dist(0, demands.size() - 1);
             size_t target_demand_index = demand_dist(Random_Engine::get_engine());

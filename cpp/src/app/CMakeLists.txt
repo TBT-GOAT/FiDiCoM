@@ -14,6 +14,7 @@ target_include_directories(main PRIVATE ${CMAKE_SOURCE_DIR}/include)
 # リンクするライブラリ
 target_link_libraries(main PRIVATE 
     CGAL::CGAL
+    OpenMP::OpenMP_CXX
     pagmo
     core_edge
     core_geom

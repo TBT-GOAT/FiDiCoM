@@ -36,6 +36,9 @@ endif()
 # pagmo
 find_package(pagmo REQUIRED)
 
+# OpenMP
+find_package(OpenMP)
+
 # add subdirectory
 add_subdirectory(app)
 add_subdirectory(core)

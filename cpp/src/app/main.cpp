@@ -3,6 +3,10 @@
 #include <iostream>
 #include <chrono>
 #include <filesystem>
+#include <atomic>
+
+// include openMP
+#include <omp.h>
 
 // include pagmo
 #include <pagmo/pagmo.hpp>
@@ -13,6 +17,9 @@ using json = nlohmann::json;
 
 // include CGAL library
 #include <CGAL/create_offset_polygons_2.h>
+
+// include util
+#include "core/util/std_vector_util.h"
 
 // include network
 #include "core/net/rDn_2.h"
@@ -146,7 +153,7 @@ int main(int argc, char *argv[]) {
         }
         case 2: {
             //** 3次元 **//
-            std::string base_path = std::filesystem::canonical(".").string() + "/data/";
+            std::string base_path = std::filesystem::canonical(".").string() + "/data/AIJ2025/3D/";
 
             // 対象領域の読み込み
             Polyhedron_3 domain_3;
@@ -1412,6 +1419,786 @@ int main(int argc, char *argv[]) {
             std::chrono::duration<double> elapsed_seconds = end_time - start_time;
             std::cout << "\nFinished in " << elapsed_seconds.count() << " seconds)" << std::endl;
 
+            break;
+
+        }
+        case 14: {
+            // Michigan State Universityのシミュレーション
+            const std::string comb_num_str = argv[2];
+            const size_t comb_num = std::stoul(comb_num_str);
+
+            std::vector<double> init_weights {1.1, 1.2, 1.3, 1.4, 1.5};
+            std::vector<size_t> seeds {17, 19, 23, 29, 31};
+
+            std::vector<size_t> damp_required_counts {5, 10, 30};
+            std::vector<size_t> amp_required_counts {5, 10, 30};
+            std::vector<double> betas {0.5, 1.0, 1.5, 2.0};
+
+            std::vector<std::pair<double, size_t>> combs_init_weight_seed {};
+            for (const auto& init_weight : init_weights) {
+                for (const auto& seed : seeds) {
+                    combs_init_weight_seed.emplace_back(init_weight, seed);
+                }
+            }
+
+            double init_weight;
+            size_t seed;
+            try {
+                auto comb = combs_init_weight_seed.at(comb_num);
+                init_weight = comb.first;
+                seed = comb.second;
+            } catch (const std::out_of_range& e) {
+                std::cerr << "Combination number out of range: " << comb_num << std::endl;
+                return EXIT_FAILURE;
+            }
+                
+            for (const auto& damp_required_count : damp_required_counts) {
+                for (const auto& amp_required_count : amp_required_counts) {
+                    for (const auto& beta : betas) {
+                        std::cout << "\n===== Running simulation with parameters =====\n"
+                                  << "init_weight=" << init_weight << "\n"
+                                  << "damp_required_count=" << damp_required_count << "\n"
+                                  << "amp_required_count=" << amp_required_count << "\n"
+                                  << "beta=" << beta << "\n"
+                                  << "seed=" << seed << "\n"
+                                  << "================================================" << std::endl;
+                        std::chrono::system_clock::time_point start_time = std::chrono::system_clock::now();
+                        run_simulation_msu(init_weight, 
+                                            damp_required_count, 
+                                            amp_required_count, 
+                                            beta, 
+                                            seed);
+                        std::chrono::system_clock::time_point end_time = std::chrono::system_clock::now();
+                        std::chrono::duration<double> elapsed_seconds = end_time - start_time;
+                        std::cout << "\nFinished in " << elapsed_seconds.count() << " seconds)" << std::endl;
+                    }
+                }
+            }
+
+            break;
+
+        }
+        case 15: {
+            //** AIJ2025図版作成用 **// 
+            // 対象領域の設定
+            std::vector<Point_2> domain_points;
+            domain_points.emplace_back(0.0, 0.0);
+            domain_points.emplace_back(0.0, 10000.0);
+            domain_points.emplace_back(10000.0, 10000.0);
+            domain_points.emplace_back(10000.0, 0.0);
+            Polygon_2 domain_2(domain_points.begin(), domain_points.end());
+
+            // 対象領域の周辺を障害物として登録
+            std::vector<std::shared_ptr<Obstacle_2>> obstacle_2_ptrs = Obstacle_2::convert_polygon(
+                                                                                            domain_2, 
+                                                                                            false, 
+                                                                                            false, 
+                                                                                            true, 
+                                                                                            Obstacle_2::DOMAIN_NAME);
+
+            // ランダムドロネー網の初期化
+            std::cout << "initializing" << std::endl;
+            rDn_2 rdn_2(10000, domain_2);
+            rdn_2.initialize();
+
+            // 障害物との交差判定
+            std::cout << "disconnecting" << std::endl;
+            rdn_2.disconnect_edges(obstacle_2_ptrs);
+
+            // 最短経路木の計算
+            std::cout << "calculating shortest path tree" << std::endl;
+            Point_2 p_2 (1000.0, 1000.0);
+            Net_2::vertex_descriptor vantage_node_2 = rdn_2.find_nearest_node(p_2);
+        
+            std::vector<std::pair<Net_2::vertex_descriptor, double>> spt_r_2 = rdn_2.calculate_shortest_path_tree(vantage_node_2, Net_2::MODE_ROUTE, true, true);
+            
+            // 最短路の計算
+            std::cout << "calculating shortest path" << std::endl;
+            Point_2 q_2 (9000.0, 9000.0);
+
+            Net_2::vertex_descriptor target_node_2 = rdn_2.find_nearest_node(q_2);
+            std::deque<std::pair<Net_2::vertex_descriptor, double>> shortest_path = rdn_2.calculate_shortest_path(vantage_node_2, target_node_2, Net_2::MODE_ROUTE, true, true);
+
+            // 書き出し
+            std::string node_2_f_path {"/home/workspace/data/AIJ2025/nodes_2.cout"};
+            std::string edge_2_f_path {"/home/workspace/data/AIJ2025/edges_2.cout"};
+            std::string adjacency_2_f_path {"/home/workspace/data/AIJ2025/adjacency_2.cout"};
+
+            rdn_2.write_nodes(node_2_f_path);
+            rdn_2.write_edges(edge_2_f_path);
+            rdn_2.write_adjacency(adjacency_2_f_path, Net_2::MODE_ROUTE);
+
+            std::ofstream g_2("/home/workspace/data/AIJ2025/spt_route_2.cout");
+            for (size_t i {0}; i < spt_r_2.size(); ++i) {
+                g_2 << std::scientific 
+                << std::setprecision(std::numeric_limits<double>::max_digits10) 
+                << i << " " << spt_r_2.at(i).first << " " << spt_r_2.at(i).second << std::endl;
+            }
+
+            std::ofstream h_2("/home/workspace/data/AIJ2025/shortest_path_route_2.cout");
+            for (const auto& [vertex, cost] : shortest_path) {
+                h_2 << vertex << " ";
+            }
+
+        }
+        case 16: {
+            //** Komaba II campus AED Location Planning **//
+            typedef std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> Facilities_Signs_Pair;
+
+            //* データフォルダの入力
+            std::string data_folder_path;
+            std::cout << "Enter the data folder path: ";
+            std::cin >> data_folder_path;
+
+            //* 入力情報の読み込み
+            Polygon_2 domain;                                           // 対象領域
+            std::vector<std::shared_ptr<Obstacle_2>> buildings;         // 建物（通過不可、不可視）
+            std::vector<std::shared_ptr<Obstacle_2>> barriers;          // 障壁（通過不可、可視）
+            std::vector<std::shared_ptr<Obstacle_2>> domain_segments;   // 対象領域の外形線
+            std::vector<Point_2> base_points;                           // ベースポイント
+            Point_2 inner_point;                                        // 対象領域内部にある点
+            std::vector<Point_2> default_AED_points;                    // 現状のAEDの座標
+
+            std::string input_data_folder = data_folder_path + "/input/";
+            std::string domain_f_path = input_data_folder + "domain.cin";
+            std::string buildings_f_path = input_data_folder + "buildings.cin";
+            std::string barriers_f_path = input_data_folder + "barriers.cin";
+            std::string basepoints_f_path = input_data_folder + "basepoints.cin";
+            std::string inner_point_f_path = input_data_folder + "inner_point.cin";
+            std::string default_AED_points_f_path = input_data_folder + "default_AED_points.cin";
+
+            // 対象領域
+            domain = Net_2::read_domain(domain_f_path);
+            
+            // 障害物
+            buildings = Obstacle_2::read_obstacles(buildings_f_path);
+            barriers = Obstacle_2::read_obstacles(barriers_f_path);
+            domain_segments = Obstacle_2::convert_polygon(domain, 
+                                            false, 
+                                            false, 
+                                            true, 
+                                            Obstacle_2::DOMAIN_NAME);
+
+            std::vector<std::shared_ptr<Obstacle_2>> obstacles;
+            obstacles.insert(obstacles.end(), buildings.begin(), buildings.end());
+            obstacles.insert(obstacles.end(), barriers.begin(), barriers.end());
+            obstacles.insert(obstacles.end(), domain_segments.begin(), domain_segments.end());
+
+            // ベースポイント
+            std::ifstream basepoints_file(basepoints_f_path);
+
+            if (!basepoints_file.is_open()) {
+                std::cerr << "Could not open the basepoints file!" << std::endl;
+            }
+
+            std::string bline;
+            double bx;
+            double by;
+            while (std::getline(basepoints_file, bline)) {
+                std::istringstream bline_stream(bline);
+                bline_stream >> bx >> by;
+                base_points.emplace_back(bx, by);
+            }
+            basepoints_file.close();
+
+            // 内部点
+            std::ifstream inner_point_file(inner_point_f_path);
+            double x, y;
+            inner_point_file >> x >> y;
+            inner_point = Point_2(x, y);
+            inner_point_file.close();
+
+            // 現状のAEDの座標
+            std::ifstream default_AED_points_file(default_AED_points_f_path);
+
+            if (!default_AED_points_file.is_open()) {
+                std::cerr << "Could not open the default AED points file!" << std::endl;
+            } 
+
+            std::string aline;
+            double ax;
+            double ay;
+            while (std::getline(default_AED_points_file, aline)) {
+                std::istringstream aline_stream(aline);
+                aline_stream >> ax >> ay;
+                default_AED_points.emplace_back(ax, ay);
+            }
+            default_AED_points_file.close();
+
+            //* 焼きなまし法のハイパーパラメータの設定
+            double init_temperature = 1000.0;     // 初期温度
+            double cooling_rate = 0.999;          // 冷却率
+            double max_iter = 1000;               // 最大反復回数
+
+            //* 試行するパラメータセット
+            size_t mode = FSLP_SA::MODE_MINSUM;
+            size_t rDn_size = 100000;
+            std::vector<size_t> seeds {
+                17,19,23,29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73,  // 小規模用
+                79,83,89,97,101,103,107,109,113,127,131,137,139,149,151   // 大規模用
+            };
+            size_t trial_num = 2; // 内1回は現状のAED配置での評価
+            std::vector<size_t> AED_nums_small = {3, 4, 5, 6};  // 小規模用のAEDの数
+            std::vector<size_t> AED_nums_large = {10, 9, 8, 7}; // 大規模用のAEDの数
+            std::vector<double> visible_ranges = {50000.0, 40000.0, 30000.0, 20000.0, 10000.0, 0.0};
+
+            //* 進行状況出力
+            size_t total_tasks =
+                seeds.size() / 2 * // 小規模と大規模でシードを分ける
+                (AED_nums_small.size() + AED_nums_large.size()) *
+                visible_ranges.size() *
+                trial_num;
+
+            std::size_t finished_tasks = 0;
+            auto global_start = std::chrono::steady_clock::now();
+
+            //* 実行
+            #pragma omp parallel for schedule(dynamic) // シードごとに並列化
+            for (size_t s_i = 0; s_i < seeds.size(); s_i++) {
+
+                size_t seed = seeds[s_i];
+
+                // AEDの数の設定（シードのインデックスに応じて小規模と大規模を切り替え）
+                const std::vector<size_t>& AED_nums =
+                    (s_i < seeds.size()/2) ? AED_nums_small : AED_nums_large;
+
+                #pragma omp critical
+                std::cout << "seed " << seed
+                        << " thread " << omp_get_thread_num()
+                        << std::endl;
+
+                Random_Engine::set_seed(seed);
+                auto& rng = Random_Engine::get_engine();
+
+                //* 出力の設定
+                bool show_progress = false;
+                bool logging = true;
+                size_t solution_id {seed * 1000000};
+
+                std::string log_data_folder = data_folder_path + "/log/";
+                std::string output_data_folder = data_folder_path + "/output/";
+
+                std::string seed_tag = "seed_" + std::to_string(seed);
+                std::ofstream parameter_table(output_data_folder + "parameters_" + seed_tag + ".csv");
+                std::ofstream result_table(output_data_folder + "experiment_results_" + seed_tag + ".csv");
+                std::ofstream solution_table(output_data_folder + "solutions_" + seed_tag + ".csv");
+                
+                if (!parameter_table.is_open()) {
+                    std::cerr << "Failed to open parameter_table\n";
+                }
+                if (!result_table.is_open()) {
+                    std::cerr << "Failed to open result_table\n";
+                }
+                if (!solution_table.is_open()) {
+                    std::cerr << "Failed to open solution_table\n";
+                }
+                
+                parameter_table << std::scientific
+                            << std::setprecision(std::numeric_limits<double>::max_digits10);
+                result_table << std::scientific
+                            << std::setprecision(std::numeric_limits<double>::max_digits10);
+                solution_table << std::scientific
+                            << std::setprecision(std::numeric_limits<double>::max_digits10);
+
+                parameter_table
+                    << "init_temperature,"
+                    << "cooling_rate,"
+                    << "max_iter,"
+                    << "mode,"
+                    << "rDn_size,"
+                    << "solution_id,"
+                    << "seed,"
+                    << "trial,"
+                    << "#facility,"
+                    << "vis_range_facility,"
+                    << "#sign,"
+                    << "vis_range_sign,"
+                    << std::endl;
+
+                result_table
+                    << "solution_id,"
+                    << "seed,"
+                    << "trial,"
+                    << "cost,"
+                    << "runtime"
+                    << std::endl;
+
+                solution_table
+                    << "solution_id,"
+                    << "seed,"
+                    << "trial,"
+                    << "type,"
+                    << "node_id,"
+                    << "x,"
+                    << "y,"
+                    << "z"
+                    << std::endl;
+
+                // solution table の書き出し関数
+                // auto write_nodes = [&](const std::shared_ptr<FSLP_SA> solver_ptr, 
+                //                     const size_t seed, 
+                //                     const int trial, 
+                //                     const std::string& type, 
+                //                     const auto& container) {
+
+                //     for (const auto& id : container) {
+
+                //         Node_2 node = *((*(solver_ptr->net_fslp.net_ptr))[id]);
+
+                //         solution_table
+                //             << solution_id << ","
+                //             << seed << ","
+                //             << trial << ","
+                //             << type << ","
+                //             << id << ","
+                //             << node.x() << ","
+                //             << node.y() << ","
+                //             << "0.0"
+                //             << std::endl;
+                //     }
+                // };
+
+                auto write_nodes = [](
+                    std::ofstream& solution_table,
+                    const std::shared_ptr<FSLP_SA> solver_ptr, 
+                    const size_t solution_id,
+                                    const size_t seed, 
+                                    const int trial, 
+                                    const std::string& type, 
+                    const auto& container) 
+                {
+                    for (const auto& id : container) {
+
+                        Node_2 node = *((*(solver_ptr->net_fslp.net_ptr))[id]);
+
+                        solution_table
+                            << solution_id << ","
+                            << seed << ","
+                            << trial << ","
+                            << type << ","
+                            << id << ","
+                            << node.x() << ","
+                            << node.y() << ","
+                            << "0.0"
+                            << std::endl;
+                    }
+                };
+
+                // distribution table の書き出し関数
+                auto write_distribution = [&](
+                    std::ofstream& distribution_table,
+                    const std::shared_ptr<FSLP_SA> solver_ptr, 
+                    const size_t seed, 
+                    const int trial) 
+                {
+                    distribution_table
+                        << "solution_id,"
+                        << "seed,"
+                        << "trial,"
+                        << "node_id,"
+                        << "x,"
+                        << "y,"
+                        << "z,"
+                        << "accessibility"
+                        << std::endl;
+
+                    for (const auto& demand : solver_ptr->net_fslp.get_demands()) {
+                        double accessibility = solver_ptr->net_fslp.calculate_cost(demand);
+
+                        distribution_table
+                            << solution_id << ","
+                            << seed << ","
+                            << trial << ","
+                            << demand << ","
+                            << (*solver_ptr->net_fslp.net_ptr)[demand]->x() << ","
+                            << (*solver_ptr->net_fslp.net_ptr)[demand]->y() << ","
+                            << "0.0" << ","
+                            << accessibility
+                            << '\n';
+                    }
+                };
+
+                // ランダムドロネー網の設定
+                rDn_2 rdn(rDn_size, domain);
+                rdn.initialize(rng);
+                rdn.disconnect_edges(obstacles);
+                std::shared_ptr<Net_2> rdn_ptr = std::make_shared<rDn_2>(rdn);
+
+                // 平均エッジ長の計算
+                double total_edge_length = 0.0;
+                Net_2::edge_iterator eit, eit_end;
+                for (boost::tie(eit, eit_end) = boost::edges(*rdn_ptr); eit != eit_end; ++eit) {
+                    auto src = boost::source(*eit, *rdn_ptr);
+                    auto tgt = boost::target(*eit, *rdn_ptr);
+                    auto src_p = (*rdn_ptr)[src];
+                    auto tgt_p = (*rdn_ptr)[tgt];
+                    double edge_length = std::sqrt(
+                        std::pow(src_p->x() - tgt_p->x(), 2) + 
+                        std::pow(src_p->y() - tgt_p->y(), 2)
+                    );
+                    total_edge_length += edge_length;
+                }
+                double num_edges = boost::num_edges(*rdn_ptr);
+                double avg_edge_length = (num_edges > 0) ? total_edge_length / num_edges : 0.0;
+
+                // 現状を評価
+                solution_id++;
+
+                // 実行済みならスキップ
+                std::string current_result_file = output_data_folder + 
+                                                "distribution_" + 
+                                                std::to_string(seed) + 
+                                                "_" +
+                                                std::to_string(default_AED_points.size()) + 
+                                                "_" +
+                                                std::to_string(0.0) +
+                                                "_" +
+                                                std::to_string(-1) + 
+                                                ".csv";
+                
+                if (std::filesystem::exists(current_result_file)) {
+                    #pragma omp critical
+                    std::cout << "Skipping current state evaluation for seed " << seed 
+                              << " (already exists: " << current_result_file << ")" << std::endl;
+                } else {
+                    Net_FSLP tmp_net_fslp(rdn_ptr);
+                    tmp_net_fslp.set_visible_length(0.0); // 建物内にあるため見えない
+                    tmp_net_fslp.set_demands(inner_point);
+                    tmp_net_fslp.initialize_facilities(default_AED_points);
+                    tmp_net_fslp.initialize_signs(0);
+                    tmp_net_fslp.initialize_main_buildings(base_points);
+
+                    std::cout << "seed " 
+                            << seed
+                            << " rDn initialized with " 
+                            << boost::num_vertices(*rdn_ptr) 
+                            << " nodes (demand node: " 
+                            << tmp_net_fslp.get_demands().size() 
+                            << ") and " 
+                            << boost::num_edges(*rdn_ptr) 
+                            << " edges (average edge length: " 
+                            << avg_edge_length
+                            << ")"
+                            << std::endl;
+
+                    std::shared_ptr<FSLP_SA> tmp_solver_ptr = std::make_shared<FSLP_SA>(tmp_net_fslp);
+                    Facilities_Signs_Pair default_solution = std::make_pair(tmp_net_fslp.get_facilities(), tmp_net_fslp.get_signs());
+                    double tmp_cost = tmp_solver_ptr->evaluate_function(default_solution, mode);
+
+                    parameter_table
+                        << init_temperature << ","
+                        << cooling_rate << ","
+                        << max_iter << ","
+                        << mode << ","
+                        << rDn_size << ","
+                        << solution_id << ","
+                        << seed << ","
+                        << -1 << ","
+                        << default_AED_points.size() << ","
+                        << 0.0 << ","
+                        << 0 << ","
+                        << 0.0 << ","
+                            << std::endl;
+                    parameter_table.flush();
+
+                    result_table
+                        << solution_id << ","
+                        << seed << ","
+                        << -1 << ","
+                        << tmp_cost << ","
+                        << ""
+                        << std::endl;
+                    result_table.flush();
+
+                    write_nodes(solution_table, tmp_solver_ptr, solution_id, seed, -1, "facility", default_solution.first);
+                    write_nodes(solution_table, tmp_solver_ptr, solution_id, seed, -1, "sign", default_solution.second);
+                    write_nodes(solution_table, tmp_solver_ptr, solution_id, seed, -1, "main_building", tmp_solver_ptr->net_fslp.get_main_buildings());
+
+                std::ofstream tmp_distribution_table(output_data_folder + 
+                                                 "distribution_" + 
+                                                 std::to_string(seed) + 
+                                                 "_" +
+                                                 std::to_string(default_AED_points.size()) + 
+                                                 "_" +
+                                                 std::to_string(0.0) +
+                                                 "_" +
+                                                 std::to_string(-1) + 
+                                                 ".csv");
+                write_distribution(tmp_distribution_table,tmp_solver_ptr, seed, -1);
+                }
+
+                // パラメータセットごとに最適化
+                for (const auto& AED_num : AED_nums) {
+                    for (const auto& visible_range : visible_ranges) {
+                        for (size_t trial {0}; trial < trial_num; trial++) {
+                            solution_id++;
+                            
+                            // 実行済みならスキップ
+                            std::string current_distribution_file = output_data_folder + 
+                                                            "distribution_" + 
+                                                            std::to_string(seed) + 
+                                                            "_" +
+                                                            std::to_string(AED_num) + 
+                                                            "_" +
+                                                            std::to_string(visible_range) +
+                                                            "_" +
+                                                            std::to_string(trial) + 
+                                                            ".csv";
+                            
+                            if (std::filesystem::exists(current_distribution_file)) {
+                                #pragma omp critical
+                                std::cout << "Skipping AED_num=" << AED_num 
+                                          << ", visible_range=" << visible_range 
+                                          << ", trial=" << trial 
+                                          << " for seed " << seed 
+                                          << " (already exists: " << current_distribution_file << ")" << std::endl;
+                                continue;
+                            }
+                            
+                            // ソルバの設定                      
+                            Net_FSLP net_fslp(rdn_ptr);
+                            net_fslp.set_visible_length(visible_range);
+                            net_fslp.set_demands(inner_point);
+                            net_fslp.initialize_facilities(AED_num);
+                            net_fslp.initialize_signs(0);
+                            net_fslp.initialize_main_buildings(base_points);
+
+                            // 最初の試行は現状のAED配置を含める
+                            if (AED_num >= default_AED_points.size() && trial == 0) {
+                                std::vector<Net_2::vertex_descriptor> initial_facility_nodes;
+                                for (const auto& default_AED_point : default_AED_points) {
+                                    Net_2::vertex_descriptor nearest_node = net_fslp.search_nearest_demand(default_AED_point);
+                                    initial_facility_nodes.push_back(nearest_node);
+                                }
+                                
+                                size_t additional_AED_num = AED_num - default_AED_points.size();
+                                std::vector<Net_2::vertex_descriptor> additional_facility_nodes = random_sampling(net_fslp.get_demands(), additional_AED_num, false);
+                                
+                                initial_facility_nodes.insert(initial_facility_nodes.end(), additional_facility_nodes.begin(), additional_facility_nodes.end());
+                                net_fslp.set_facilities(initial_facility_nodes);
+                            }
+
+                            Facilities_Signs_Pair initial_solution = std::make_pair(net_fslp.get_facilities(), net_fslp.get_signs());
+
+                            std::shared_ptr<FSLP_SA> solver_ptr = std::make_shared<FSLP_SA>(net_fslp);
+
+                            Simulated_Annealing<std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>> sa(
+                                init_temperature,    
+                                cooling_rate,      
+                                max_iter,       
+                                [solver_ptr, mode](const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> solution){
+                                    return solver_ptr->evaluate_function(solution, mode);
+                                }, 
+                                [solver_ptr](const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>& current_solution){
+                                    return solver_ptr->generate_neighbor_function_with_jump(current_solution);
+                                }
+                            );
+
+                            // 求解
+                            std::string log_file_name = log_data_folder + "log_fslp_" + std::to_string(solution_id) + ".cout";
+                            std::ofstream log_file(log_file_name);
+
+                            auto start = std::chrono::high_resolution_clock::now();
+                            Facilities_Signs_Pair best_solution = sa.solve(initial_solution, show_progress, logging, &log_file);
+                            auto end = std::chrono::high_resolution_clock::now();
+
+                            // 結果の記録
+                            double cost = solver_ptr->evaluate_function(best_solution, mode);
+                            auto runtime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+                            parameter_table
+                                << init_temperature << ","
+                                << cooling_rate << ","
+                                << max_iter << ","
+                                << mode << ","
+                                << rDn_size << ","
+                                << solution_id << ","
+                                << seed << ","
+                                << trial << ","
+                                << AED_num << ","
+                                << visible_range << ","
+                                << 0 << ","
+                                << visible_range << ","
+                                << std::endl;
+                            parameter_table.flush();
+
+                            result_table
+                                << solution_id << ","
+                                << seed << ","
+                                << trial << ","
+                                << cost << ","
+                                << runtime
+                                << std::endl;
+                            result_table.flush();
+
+                            write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "facility", best_solution.first);
+                            write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "sign", best_solution.second);
+                            write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "main_building", solver_ptr->net_fslp.get_main_buildings());
+
+                            std::ofstream distribution_table(output_data_folder + 
+                                                            "distribution_" + 
+                                                            std::to_string(seed) + 
+                                                            "_" +
+                                                            std::to_string(AED_num) + 
+                                                            "_" +
+                                                            std::to_string(visible_range) +
+                                                            "_" +
+                                                            std::to_string(trial) + 
+                                                            ".csv");
+                            write_distribution(distribution_table, solver_ptr, seed, trial);
+
+                            // 設定をもとに戻す
+                            net_fslp.clear();
+
+                            // 進行状況
+                            size_t done;
+
+                            #pragma omp atomic capture
+                            done = ++finished_tasks;
+
+                            auto now = std::chrono::steady_clock::now();
+                            double elapsed =
+                                std::chrono::duration<double>(now - global_start).count();
+
+                            double rate = done / elapsed;
+                            double remaining = (total_tasks - done) / rate;
+                            
+                            #pragma omp critical
+                            {
+                            std::cout << "\rProgress "
+                                    << done << "/" << total_tasks
+                                    << " | ETA "
+                                    << remaining/60 << " min"
+                                    << std::flush;
+                            }
+
+                        }
+                    }
+                }
+
+            }
+
+            break;
+        }
+        case 17: {
+            //** 到達可能点の確認 **//   
+            //* データフォルダの入力
+            std::string data_folder_path;
+            std::cout << "Enter the data folder path: ";
+            std::cin >> data_folder_path;
+
+            //* 入力情報の読み込み
+            Polygon_2 domain;                                           // 対象領域
+            std::vector<std::shared_ptr<Obstacle_2>> buildings;         // 建物（通過不可、不可視）
+            std::vector<std::shared_ptr<Obstacle_2>> barriers;          // 障壁（通過不可、可視）
+            std::vector<std::shared_ptr<Obstacle_2>> domain_segments;   // 対象領域の外形線
+            std::vector<Point_2> base_points;                           // ベースポイント
+            Point_2 inner_point;                                        // 対象領域内部にある点
+            std::vector<Point_2> default_AED_points;                    // 現状のAEDの座標
+
+            std::string input_data_folder = data_folder_path + "/input/";
+            std::string domain_f_path = input_data_folder + "domain.cin";
+            std::string buildings_f_path = input_data_folder + "buildings.cin";
+            std::string barriers_f_path = input_data_folder + "barriers.cin";
+            std::string basepoints_f_path = input_data_folder + "basepoints.cin";
+            std::string inner_point_f_path = input_data_folder + "inner_point.cin";
+            std::string default_AED_points_f_path = input_data_folder + "default_AED_points.cin";
+
+            // 対象領域
+            domain = Net_2::read_domain(domain_f_path);
+            
+            // 障害物
+            buildings = Obstacle_2::read_obstacles(buildings_f_path);
+            barriers = Obstacle_2::read_obstacles(barriers_f_path);
+            domain_segments = Obstacle_2::convert_polygon(domain, 
+                                            false, 
+                                            false, 
+                                            true, 
+                                            Obstacle_2::DOMAIN_NAME);
+
+            std::vector<std::shared_ptr<Obstacle_2>> obstacles;
+            obstacles.insert(obstacles.end(), buildings.begin(), buildings.end());
+            obstacles.insert(obstacles.end(), barriers.begin(), barriers.end());
+            obstacles.insert(obstacles.end(), domain_segments.begin(), domain_segments.end());
+
+            // ベースポイント
+            std::ifstream basepoints_file(basepoints_f_path);
+
+            if (!basepoints_file.is_open()) {
+                std::cerr << "Could not open the basepoints file!" << std::endl;
+            }
+
+            std::string bline;
+            double bx;
+            double by;
+            while (std::getline(basepoints_file, bline)) {
+                std::istringstream bline_stream(bline);
+                bline_stream >> bx >> by;
+                base_points.emplace_back(bx, by);
+            }
+            basepoints_file.close();
+            
+            // 内部点
+            std::ifstream inner_point_file(inner_point_f_path);
+            double x, y;
+            inner_point_file >> x >> y;
+            inner_point = Point_2(x, y);
+            inner_point_file.close();
+
+            // 現状のAEDの座標
+            std::ifstream default_AED_points_file(default_AED_points_f_path);
+
+            if (!default_AED_points_file.is_open()) {
+                std::cerr << "Could not open the default AED points file!" << std::endl;
+            } 
+
+            std::string aline;
+            double ax;
+            double ay;
+            while (std::getline(default_AED_points_file, aline)) {
+                std::istringstream aline_stream(aline);
+                aline_stream >> ax >> ay;
+                default_AED_points.emplace_back(ax, ay);
+            }
+            default_AED_points_file.close();
+
+        
+            // ランダムドロネー網の初期化
+            std::cout << "initializing" << std::endl;
+            rDn_2 rdn(10000, domain);
+            rdn.initialize();
+            rdn.disconnect_edges(obstacles);
+
+            // ネットワークの書き出し
+            std::string node_f_path {"/home/workspace/data/simulation_UTKomaba2/nodes.cout"};
+            std::string edge_f_path {"/home/workspace/data/simulation_UTKomaba2/edges.cout"};
+            std::string adjacency_f_path {"/home/workspace/data/simulation_UTKomaba2/adjacency.cout"};
+        
+            rdn.write_nodes(node_f_path);
+            rdn.write_edges(edge_f_path);
+            rdn.write_adjacency(adjacency_f_path, Net_2::MODE_ROUTE);
+            
+            // 最短経路木の計算
+            Net_2::vertex_descriptor inner_node = rdn.find_nearest_node(inner_point);
+            std::vector<std::pair<Net_2::vertex_descriptor, double>> spt = rdn.calculate_shortest_path_tree(inner_node, Net_2::MODE_ROUTE, true, true);
+            
+            std::ofstream g_2("/home/workspace/data/simulation_UTKomaba2/spt.cout");
+            for (size_t i {0}; i < spt.size(); ++i) {
+                g_2 << std::scientific 
+                << std::setprecision(std::numeric_limits<double>::max_digits10) 
+                << i << " " << spt.at(i).first << " " << spt.at(i).second << std::endl;
+            }
+        
+            // 到達可能なノードの書き出し
+            std::cout << "calculating reachability" << std::endl;
+            std::unordered_set<Net_2::vertex_descriptor> reachable_vertices = rdn.calculate_reachable_vertices(inner_point);
+        
+            std::ofstream f("/home/workspace/data/simulation_UTKomaba2/reachable_nodes.cout");
+            for (const auto& v : reachable_vertices) {
+                f << rdn[v]->x() << "," << rdn[v]->y() << ",0.0" << std::endl;
+            }
+
+            break;
         }
 
         default:

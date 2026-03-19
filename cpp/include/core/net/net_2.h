@@ -43,6 +43,9 @@
 #include "core/obstacle/obstacle_2.h"
 #include "core/region/region_2.h"
 
+// include random engine
+#include "core/util/random_engine.h"
+
 // include boost graph library
 #include <boost/graph/adjacency_list.hpp>
 typedef boost::adjacency_list<
@@ -73,6 +76,12 @@ class Net_2 : public Graph_2 {
          * @return std::vector<std::shared_ptr<Node_2>> 
          *************************************************/
         std::vector<std::shared_ptr<Node_2>> generate_random_nodes() const;
+        /*************************************************
+         * @brief ネットワークのノードを生成する
+         * 
+         * @return std::vector<std::shared_ptr<Node_2>> 
+         *************************************************/
+        std::vector<std::shared_ptr<Node_2>> generate_random_nodes(std::mt19937& rng) const;
         /*************************************************
          * @brief 最短経路木の一致部分を探索する
          * 

@@ -34,12 +34,13 @@
 
 class Random_Engine {
     private:
-        inline static unsigned int seed = 42; // 初期値を指定
+        inline static thread_local std::mt19937 engine{42}; // デフォルトシードを42に設定 
+                                                            // 並列化時に独立した乱数生成器を立てる
+        inline static thread_local unsigned int seed = 42;   // シードの値を保持する変数
 
     public:
         // 乱数エンジンのインスタンスを取得
         static std::mt19937& get_engine() {
-            static std::mt19937 engine(seed); // シードを固定
             return engine;
         }
 

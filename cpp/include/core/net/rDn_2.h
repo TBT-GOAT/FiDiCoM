@@ -37,6 +37,9 @@
 #include <CGAL/Delaunay_triangulation_2.h>
 typedef CGAL::Delaunay_triangulation_2<K> Delaunay_2;
 
+// include random engine
+#include "core/util/random_engine.h"
+
 class rDn_2 : public Net_2 {
     protected:
         Delaunay_2 tessellation;
@@ -68,6 +71,11 @@ class rDn_2 : public Net_2 {
          * 
          *************************************************/
         void initialize() override;
+        /*************************************************
+         * @brief ランダムドロネー網を初期化する
+         * 
+         *************************************************/
+        void initialize(std::mt19937& rng);
         /*************************************************
          * @brief 与えられた頂点でランダムドロネー網を初期化する
          * 

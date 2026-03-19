@@ -213,6 +213,65 @@ std::vector<std::shared_ptr<Node_2>> Net_2::generate_random_nodes() const {
 
 }
 
+std::vector<std::shared_ptr<Node_2>> Net_2::generate_random_nodes(std::mt19937& rng) const {
+    
+    // 対象領域のバウンディングボックスを計算する
+    //TODO ノード数節約のため oriented bounding box にしたい
+    Bbox_2 bbox = domain.bbox();
+    double xmax {bbox.xmax()};
+    double xmin {bbox.xmin()};
+    double ymax {bbox.ymax()};
+    double ymin {bbox.ymin()};
+    Point_2 p_left_bottom (xmin, ymin);
+    Point_2 p_right_bottom (xmax, ymin);
+    Point_2 p_right_top (xmax, ymax);
+    Point_2 p_left_top (xmin, ymax);
+    
+    Polygon_2 bbox_polygon;
+    bbox_polygon.push_back(p_left_bottom);
+    bbox_polygon.push_back(p_right_bottom);
+    bbox_polygon.push_back(p_right_top);
+    bbox_polygon.push_back(p_left_top);
+
+    // バウンディングボックスをオフセットする
+    double bbox_area = bbox_polygon.area();
+    double offset_dist = std::sqrt(bbox_area) * offset_r; //TODO オフセット長さの設定方法は暫定的
+    std::vector<boost::shared_ptr<Polygon_2>> offset_polygons = CGAL::create_exterior_skeleton_and_offset_polygons_2(offset_dist, bbox_polygon);
+
+    Polygon_2 offset_bbox_polygon = *offset_polygons.at(0);
+    Bbox_2 offset_bbox = offset_bbox_polygon.bbox();
+    double offset_xmax {offset_bbox.xmax()};
+    double offset_xmin {offset_bbox.xmin()};
+    double offset_ymax {offset_bbox.ymax()};
+    double offset_ymin {offset_bbox.ymin()};
+
+    // 対象領域内にnode_num個のノードを生成する
+    // 乱数生成器の設定
+    std::uniform_real_distribution<> x_dist(offset_xmin, offset_xmax);
+    std::uniform_real_distribution<> y_dist(offset_ymin, offset_ymax);
+
+    std::vector<std::shared_ptr<Node_2>> node_ptrs;
+    int inside_node_num {0};
+    while (inside_node_num < node_num) {
+        std::shared_ptr<Node_2> node_ptr = std::make_shared<Node_2>(x_dist(rng), y_dist(rng));
+        node_ptrs.push_back(node_ptr);
+
+        // 内外判定してカウントする
+        switch (domain.bounded_side(*node_ptr)) {
+            case CGAL::ON_BOUNDED_SIDE:
+                ++inside_node_num;
+                break;
+            case CGAL::ON_BOUNDARY:
+                break;
+            case CGAL::ON_UNBOUNDED_SIDE:
+                break;
+        }
+    }
+
+    return node_ptrs;
+
+}
+
 void Net_2::initialize() {
     throw std::runtime_error(
         "Virtual function. Use derived class.\n"

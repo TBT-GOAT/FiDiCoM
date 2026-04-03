@@ -73,7 +73,7 @@ void Net_WP::clear_tree() {
 
 void Net_WP::insert_dummy_vertex_facilities() {
     
-    std::shared_ptr<Node_2> dummy_node_facilities_ptr = std::make_shared<Node_2>(DUMMY_POINT);
+    std::shared_ptr<Node_2> dummy_node_facilities_ptr = std::make_shared<Node_2>(DUMMY_POINT, true);
 
     Net_2::vertex_descriptor dummy_vertex_facilities = boost::add_vertex(dummy_node_facilities_ptr, *(this->net_ptr));
     this->set_dummy_vertex_facilities(dummy_vertex_facilities);

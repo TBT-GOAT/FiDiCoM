@@ -10,6 +10,9 @@ static std::uniform_real_distribution<double> dist(0.0, 1.0);
 const Point_2 Net_FSLP::DUMMY_POINT_FACILITIES = Point_2(dist(Random_Engine::get_engine()), dist(Random_Engine::get_engine()));
 const Point_2 Net_FSLP::DUMMY_POINT_SIGNS = Point_2(dist(Random_Engine::get_engine()), dist(Random_Engine::get_engine()));
 const Point_2 Net_FSLP::DUMMY_POINT_MAIN_BUILDINGS = Point_2(dist(Random_Engine::get_engine()), dist(Random_Engine::get_engine()));
+const size_t Net_FSLP::COST_PATTERN_DFD = 0;
+const size_t Net_FSLP::COST_PATTERN_DSFD = 1;
+const size_t Net_FSLP::COST_PATTERN_DBFD = 2;
 
 //** Constructor **//
 Net_FSLP::Net_FSLP() : net_ptr(std::make_shared<Net_2>()) {} 
@@ -95,7 +98,8 @@ void Net_FSLP::set_visible_length(const double visible_length) {
 }
 void Net_FSLP::set_demands() {
     std::unordered_set<Net_2::vertex_descriptor> demands_set;
-    demands_set = this->net_ptr->calculate_reachable_vertices(this->inner_point);
+    std::vector<Net_2::vertex_descriptor> prohibited_vertices={dummy_vertex_facilities, dummy_vertex_signs, dummy_vertex_main_buildings};
+    demands_set = this->net_ptr->calculate_reachable_vertices(this->inner_point, prohibited_vertices);
     this->demands = std::vector<Net_2::vertex_descriptor>(demands_set.begin(), demands_set.end());
 }
 void Net_FSLP::set_demands(const Point_2 inner_point) {
@@ -143,7 +147,7 @@ void Net_FSLP::clear_trees() {
 
 void Net_FSLP::insert_dummy_vertex_facilities() {
     
-    std::shared_ptr<Node_2> dummy_node_facilities_ptr = std::make_shared<Node_2>(DUMMY_POINT_FACILITIES);
+    std::shared_ptr<Node_2> dummy_node_facilities_ptr = std::make_shared<Node_2>(DUMMY_POINT_FACILITIES, true);
 
     Net_2::vertex_descriptor dummy_vertex_facilities = boost::add_vertex(dummy_node_facilities_ptr, *(this->net_ptr));
     this->set_dummy_vertex_facilities(dummy_vertex_facilities);
@@ -158,7 +162,7 @@ void Net_FSLP::insert_dummy_vertex_facilities() {
 
 void Net_FSLP::insert_dummy_vertex_signs() {
     
-    std::shared_ptr<Node_2> dummy_node_signs_ptr = std::make_shared<Node_2>(DUMMY_POINT_SIGNS);
+    std::shared_ptr<Node_2> dummy_node_signs_ptr = std::make_shared<Node_2>(DUMMY_POINT_SIGNS, true);
 
     Net_2::vertex_descriptor dummy_vertex_signs = boost::add_vertex(dummy_node_signs_ptr, *(this->net_ptr));
     this->set_dummy_vertex_signs(dummy_vertex_signs);
@@ -173,7 +177,7 @@ void Net_FSLP::insert_dummy_vertex_signs() {
 
 void Net_FSLP::insert_dummy_vertex_main_buildings() {
     
-    std::shared_ptr<Node_2> dummy_node_main_buildings_ptr = std::make_shared<Node_2>(DUMMY_POINT_MAIN_BUILDINGS);
+    std::shared_ptr<Node_2> dummy_node_main_buildings_ptr = std::make_shared<Node_2>(DUMMY_POINT_MAIN_BUILDINGS, true);
 
     Net_2::vertex_descriptor dummy_vertex_main_buildings = boost::add_vertex(dummy_node_main_buildings_ptr, *(this->net_ptr));
     this->set_dummy_vertex_main_buildings(dummy_vertex_main_buildings);
@@ -816,12 +820,13 @@ void Net_FSLP::update_facility_assignment_to_demand() {
 }
 
 //** Cost Function Methods **//
-double Net_FSLP::calculate_cost(Net_2::vertex_descriptor demand) const {
+std::pair<size_t, double> Net_FSLP::calculate_cost(Net_2::vertex_descriptor demand) const {
     std::pair<bool, Net_2::vertex_descriptor> assigned_facility = this->get_assigned_facility_to_demand(demand);
     std::pair<bool, Net_2::vertex_descriptor> assigned_sign = this->get_assigned_sign_to_demand(demand);
     std::pair<bool, Net_2::vertex_descriptor> assigned_facility_to_sign = this->get_assigned_facility_to_sign(assigned_sign.second);
     std::pair<bool, Net_2::vertex_descriptor> assigned_main_building = this->get_assigned_main_building_to_demand(demand);
 
+    size_t cost_pattern;
     double cost;
     double cost_demand_facility;
     double cost_demand_waystop;
@@ -839,19 +844,23 @@ double Net_FSLP::calculate_cost(Net_2::vertex_descriptor demand) const {
 
     }
 
-    return cost;
+    throw std::runtime_error(
+        "Unexpected error in cost calculation.\n"
+        "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+    );
+
 }
 
-double Net_FSLP::calculate_cost_to_nearest_facility_identified(Net_2::vertex_descriptor demand) const {
+std::pair<size_t, double> Net_FSLP::calculate_cost_to_nearest_facility_identified(Net_2::vertex_descriptor demand) const {
 
     double cost_demand_facility {0.0}; // 需要点 --> サービス供給点
     cost_demand_facility = this->facility_shortest_path_tree.at(demand).second;
 
-    return 2 * cost_demand_facility; // 需要点 --> サービス供給点 --> 需要点
+    return std::make_pair(COST_PATTERN_DFD, 2 * cost_demand_facility); // 需要点 --> サービス供給点 --> 需要点
 
 }
 
-double Net_FSLP::calculate_cost_to_nearest_facility_unidentified(Net_2::vertex_descriptor demand) const {
+std::pair<size_t, double> Net_FSLP::calculate_cost_to_nearest_facility_unidentified(Net_2::vertex_descriptor demand) const {
     
     // いったん最寄りの主要施設に向かう
     if (!this->get_assigned_main_building_to_demand(demand).first) {
@@ -891,7 +900,7 @@ std::pair<bool, Net_2::vertex_descriptor> Net_FSLP::find_waystop(Net_2::vertex_d
 
 }
 
-double Net_FSLP::calculate_cost_via_waystop(Net_2::vertex_descriptor demand, Net_2::vertex_descriptor waystop) const {
+std::pair<size_t, double> Net_FSLP::calculate_cost_via_waystop(Net_2::vertex_descriptor demand, Net_2::vertex_descriptor waystop) const {
     
     double cost_demand_facility {0.0}; // 需要点 --> サービス供給点
     double cost_demand_waystop {0.0}; // 需要点 --> 中継地点
@@ -901,11 +910,11 @@ double Net_FSLP::calculate_cost_via_waystop(Net_2::vertex_descriptor demand, Net
     cost_waystop_facility = this->facility_shortest_path_tree.at(waystop).second;
     cost_demand_facility = this->facility_shortest_path_tree.at(demand).second;
 
-    return cost_demand_waystop + cost_waystop_facility + cost_demand_facility; // 需要点 --> 中継地点 --> サービス供給点 --> 需要点
+    return std::make_pair(COST_PATTERN_DSFD, cost_demand_waystop + cost_waystop_facility + cost_demand_facility); // 需要点 --> 中継地点 --> サービス供給点 --> 需要点
 
 }
 
-double Net_FSLP::calculate_cost_via_main_building(Net_2::vertex_descriptor demand, Net_2::vertex_descriptor assigned_main_building) const {
+std::pair<size_t, double> Net_FSLP::calculate_cost_via_main_building(Net_2::vertex_descriptor demand, Net_2::vertex_descriptor assigned_main_building) const {
     
     double cost_demand_facility {0.0}; // 需要点 --> サービス供給点
     double cost_demand_main_building {0.0}; // 需要点 --> 主要施設
@@ -915,6 +924,6 @@ double Net_FSLP::calculate_cost_via_main_building(Net_2::vertex_descriptor deman
     cost_main_building_facility = this->facility_shortest_path_tree.at(assigned_main_building).second;
     cost_demand_facility = this->facility_shortest_path_tree.at(demand).second;
 
-    return cost_demand_main_building + cost_main_building_facility + cost_demand_facility; // 需要点 --> 主要施設 --> サービス供給点 --> 需要点
+    return std::make_pair(COST_PATTERN_DBFD, cost_demand_main_building + cost_main_building_facility + cost_demand_facility); // 需要点 --> 主要施設 --> サービス供給点 --> 需要点
 
 }

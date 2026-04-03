@@ -205,6 +205,11 @@ class Net_FSLP {
         
         std::shared_ptr<Net_2> net_ptr; // 任意のNet_2のポインタ
 
+        // コストのパターン
+        static const size_t COST_PATTERN_DFD; // 0: 需要点 --> サービス供給点 --> 需要点
+        static const size_t COST_PATTERN_DSFD; // 1: 需要点 --> サイン（中継地点） --> サービス供給点 --> 需要点
+        static const size_t COST_PATTERN_DBFD; // 2: 需要点 --> 主要建物 --> サービス供給点 --> 需要点
+
         //** Constructor **//
         Net_FSLP();
         Net_FSLP(std::shared_ptr<Net_2> net_ptr);
@@ -387,23 +392,23 @@ class Net_FSLP {
          * TODO 面積の考慮
          * 
          * @param demand 
-         * @return double 
+         * @return std::pair<size_t, double> コストのパターン, コスト 
          *************************************************/
-        double calculate_cost(Net_2::vertex_descriptor demand) const;
+        std::pair<size_t, double> calculate_cost(Net_2::vertex_descriptor demand) const;
         /*************************************************
          * @brief サービス供給点が割当済のときのコストを計算する
          * 
          * @param demand 
-         * @return double 
+         * @return std::pair<size_t, double> コストのパターン, コスト 
          *************************************************/
-        double calculate_cost_to_nearest_facility_identified(Net_2::vertex_descriptor demand) const;
+        std::pair<size_t, double> calculate_cost_to_nearest_facility_identified(Net_2::vertex_descriptor demand) const;
         /*************************************************
          * @brief サービス供給点が割当前のときのコストを計算する
          * 
          * @param demand 
-         * @return double 
+         * @return std::pair<size_t, double> コストのパターン, コスト 
          *************************************************/
-        double calculate_cost_to_nearest_facility_unidentified(Net_2::vertex_descriptor demand) const;
+        std::pair<size_t, double> calculate_cost_to_nearest_facility_unidentified(Net_2::vertex_descriptor demand) const;
         /*************************************************
          * @brief 中継地点（サービス供給点が判明する頂点）を探索する
          * 
@@ -416,17 +421,17 @@ class Net_FSLP {
          * 
          * @param demand 
          * @param waystop 
-         * @return double 
+         * @return std::pair<size_t, double> コストのパターン, コスト 
          *************************************************/
-        double calculate_cost_via_waystop(Net_2::vertex_descriptor demand, Net_2::vertex_descriptor waystop) const;
+        std::pair<size_t, double> calculate_cost_via_waystop(Net_2::vertex_descriptor demand, Net_2::vertex_descriptor waystop) const;
         /*************************************************
          * @brief 主要建物を経由したときのコストを計算する
          * 
          * @param demand 
          * @param assigned_main_building 
-         * @return double 
+         * @return std::pair<size_t, double> コストのパターン, コスト 
          *************************************************/
-        double calculate_cost_via_main_building(Net_2::vertex_descriptor demand, Net_2::vertex_descriptor assigned_main_building) const;
+        std::pair<size_t, double> calculate_cost_via_main_building(Net_2::vertex_descriptor demand, Net_2::vertex_descriptor assigned_main_building) const;
 
 };
 

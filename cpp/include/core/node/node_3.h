@@ -42,12 +42,16 @@ typedef K::Point_3 Point_3;
 
 class Node_3 : public Point_3 {
     private:
+        bool is_dummy = false; // ダミーノードかどうかのフラグ
 
     public:
         //** Constructor **//
-        Node_3();
-        Node_3(const double x, const double y, const double z);
-        Node_3(const Point_3 p);
+        Node_3(bool is_dummy = false);
+        Node_3(const double x, const double y, const double z, bool is_dummy = false);
+        Node_3(const Point_3 p, bool is_dummy = false);
+        
+        //** Getter **//
+        bool get_is_dummy() const { return is_dummy; }
 
         //** Geometric Method **//
 };

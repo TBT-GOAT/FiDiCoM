@@ -165,6 +165,7 @@ std::vector<std::shared_ptr<Obstacle_2>> Obstacle_2::read_obstacles(const std::s
     bool navigability;
     while (std::getline(file, line)) {
         std::istringstream line_stream(line);
+        line_stream >> std::boolalpha;
         line_stream >> x1 >> y1 >> x2 >> y2 >> transparency >> navigability;
 
         std::shared_ptr<Obstacle_2> obstacle_ptr = std::make_shared<Obstacle_2>(Segment_2(Point_2_(x1, y1), Point_2_(x2, y2)), 

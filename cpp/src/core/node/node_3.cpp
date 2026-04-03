@@ -5,16 +5,16 @@
 
 
 //** Constructor **//
-Node_3::Node_3() : 
-    Point_3()
+Node_3::Node_3(bool is_dummy) : 
+    Point_3(), is_dummy(is_dummy)
 {}
 
-Node_3::Node_3(const double x, const double y, const double z) : 
-    Point_3(x, y, z) 
+Node_3::Node_3(const double x, const double y, const double z, bool is_dummy) : 
+    Point_3(x, y, z), is_dummy(is_dummy)
 {}
 
-Node_3::Node_3(const Point_3 p) : 
-    Point_3(p)
+Node_3::Node_3(const Point_3 p, bool is_dummy) : 
+    Point_3(p), is_dummy(is_dummy)
 {}
 
 //** Geometric Method **//

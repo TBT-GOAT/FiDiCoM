@@ -63,13 +63,13 @@ double FSLP_SA::evaluate_function(
     if (mode == MODE_MINSUM) {
         objective = 0.0;
         for (const auto& demand : this->net_fslp.get_demands()) {
-            objective += this->net_fslp.calculate_cost(demand);
+            objective += this->net_fslp.calculate_cost(demand).second;
         }
     } else if (mode == MODE_MINMAX) {
         objective = 0.0;
         std::vector<double> costs;
         for (const auto& demand : this->net_fslp.get_demands()) {
-            costs.push_back(this->net_fslp.calculate_cost(demand));
+            costs.push_back(this->net_fslp.calculate_cost(demand).second);
         }
         objective = *std::max_element(costs.begin(), costs.end());
     } else {
@@ -107,12 +107,20 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
         
         std::vector<Net_2::vertex_descriptor> adjacents_to_target_facility;
         Net_2::adjacency_iterator adj_vit, adj_vit_end;
-        for (boost::tie(adj_vit, adj_vit_end) = boost::adjacent_vertices(target_facility, 
-                *(this->net_fslp.net_ptr)); 
-                adj_vit != adj_vit_end; ++adj_vit) {
-                if (find_index(demands, *adj_vit) != -1) {
-                    adjacents_to_target_facility.push_back(*adj_vit);
-                }
+        for (
+            boost::tie(adj_vit, adj_vit_end) = boost::adjacent_vertices(target_facility, *(this->net_fslp.net_ptr)); 
+            adj_vit != adj_vit_end; 
+            ++adj_vit
+        ) {
+            // ダミーでない需要点を選ぶ
+            if (find_index(demands, *adj_vit) != -1 && (*(this->net_fslp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
+                adjacents_to_target_facility.push_back(*adj_vit);
+            }
+        }
+
+        if (adjacents_to_target_facility.empty()) {
+            // fallback: demandsから選ぶ
+            adjacents_to_target_facility = demands;
         }
 
         // adjacents_to_target_facilityからランダムにひとつ選ぶ
@@ -131,12 +139,20 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
 
         std::vector<Net_2::vertex_descriptor> adjacents_to_target_sign;
         Net_2::adjacency_iterator adj_vit, adj_vit_end;
-        for (boost::tie(adj_vit, adj_vit_end) = boost::adjacent_vertices(target_sign, 
-                *(this->net_fslp.net_ptr)); 
-                adj_vit != adj_vit_end; ++adj_vit) {
-                if (find_index(demands, *adj_vit) != -1) {
-                    adjacents_to_target_sign.push_back(*adj_vit);
-                }
+        for (
+            boost::tie(adj_vit, adj_vit_end) = boost::adjacent_vertices(target_sign, *(this->net_fslp.net_ptr)); 
+            adj_vit != adj_vit_end; 
+            ++adj_vit
+        ) {
+            // ダミーでない需要点を選ぶ
+            if (find_index(demands, *adj_vit) != -1 && (*(this->net_fslp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
+                adjacents_to_target_sign.push_back(*adj_vit);
+            }
+        }
+
+        if (adjacents_to_target_sign.empty()) {
+            // fallback: demandsから選ぶ
+            adjacents_to_target_sign = demands;
         }
 
         // adjacents_to_target_signからランダムにひとつ選ぶ
@@ -189,12 +205,20 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
             // 隣接頂点だけから選ぶ
             std::vector<Net_2::vertex_descriptor> adjacents_to_target_facility;
             Net_2::adjacency_iterator adj_vit, adj_vit_end;
-            for (boost::tie(adj_vit, adj_vit_end) = boost::adjacent_vertices(target_facility, 
-                    *(this->net_fslp.net_ptr)); 
-                    adj_vit != adj_vit_end; ++adj_vit) {
-                    if (find_index(demands, *adj_vit) != -1) {
-                        adjacents_to_target_facility.push_back(*adj_vit);
-                    }
+            for (
+                boost::tie(adj_vit, adj_vit_end) = boost::adjacent_vertices(target_facility, *(this->net_fslp.net_ptr)); 
+                adj_vit != adj_vit_end; 
+                ++adj_vit
+            ) {
+                // ダミーでない需要点を選ぶ
+                if (find_index(demands, *adj_vit) != -1 && (*(this->net_fslp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
+                    adjacents_to_target_facility.push_back(*adj_vit);
+                }
+            }
+
+            if (adjacents_to_target_facility.empty()) {
+                // fallback: demandsから選ぶ
+                adjacents_to_target_facility = demands;
             }
 
             // adjacents_to_target_facilityからランダムにひとつ選ぶ
@@ -221,12 +245,20 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
             // 隣接頂点だけから選ぶ
             std::vector<Net_2::vertex_descriptor> adjacents_to_target_sign;
             Net_2::adjacency_iterator adj_vit, adj_vit_end;
-            for (boost::tie(adj_vit, adj_vit_end) = boost::adjacent_vertices(target_sign, 
-                    *(this->net_fslp.net_ptr)); 
-                    adj_vit != adj_vit_end; ++adj_vit) {
-                    if (find_index(demands, *adj_vit) != -1) {
-                        adjacents_to_target_sign.push_back(*adj_vit);
-                    }
+            for (
+                boost::tie(adj_vit, adj_vit_end) = boost::adjacent_vertices(target_sign, *(this->net_fslp.net_ptr)); 
+                adj_vit != adj_vit_end; 
+                ++adj_vit
+            ) {
+                // ダミーでない需要点を選ぶ
+                if (find_index(demands, *adj_vit) != -1 && (*(this->net_fslp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
+                    adjacents_to_target_sign.push_back(*adj_vit);
+                }
+            }
+
+            if (adjacents_to_target_sign.empty()) {
+                // fallback: demandsから選ぶ
+                adjacents_to_target_sign = demands;
             }
 
             // adjacents_to_target_signからランダムにひとつ選ぶ

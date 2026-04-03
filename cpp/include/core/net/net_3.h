@@ -339,6 +339,7 @@ class Net_3 : public Graph_3 {
          *************************************************/
         std::unordered_set<Net_3::vertex_descriptor> calculate_reachable_vertices(
             Point_3 p, 
+            const std::vector<Net_3::vertex_descriptor> prohibited_vertices={}, 
             const double length_constraint=std::numeric_limits<double>::max()
         ) const;
         /*************************************************

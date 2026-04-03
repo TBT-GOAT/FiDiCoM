@@ -698,14 +698,19 @@ std::unordered_set<Net_2::vertex_descriptor> Net_2::calculate_visible_vertices(
 }
 
 std::unordered_set<Net_2::vertex_descriptor> Net_2::calculate_reachable_vertices(
-    Point_2 p, 
+    Point_2 p,
+    const std::vector<Net_2::vertex_descriptor> prohibited_vertices,
     const double length_constraint) const 
 {
     Net_2::vertex_descriptor orient_node = this->find_nearest_node(p);
 
     std::vector<std::pair<Net_2::vertex_descriptor, double>> spt_with_obstacles;
 
-    spt_with_obstacles = this->calculate_shortest_path_tree(orient_node, Net_2::MODE_ROUTE, true, true);
+    spt_with_obstacles = this->calculate_shortest_path_tree(orient_node, 
+                                                            Net_2::MODE_ROUTE, 
+                                                            true, 
+                                                            true, 
+                                                            prohibited_vertices);
     
     // 最短経路木を反転する
     // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする

@@ -63,7 +63,7 @@ double WP_SA::evaluate_function(
 
 }
 
-std::vector<Net_2::vertex_descriptor> WP_SA::generate_neighbor_function(
+std::vector<Net_2::vertex_descriptor> WP_SA::generate_neighbor_function_without_jump(
     const std::vector<Net_2::vertex_descriptor> facilities
 ) const {
     std::vector<Net_2::vertex_descriptor> neighbor_facilities = facilities;
@@ -81,11 +81,16 @@ std::vector<Net_2::vertex_descriptor> WP_SA::generate_neighbor_function(
     for (boost::tie(adj_vit, adj_vit_end) = boost::adjacent_vertices(target_facility, *(this->net_wp.net_ptr)); 
          adj_vit != adj_vit_end; 
          ++adj_vit
-    ) 
-    {
-        if (find_index(demands, *adj_vit) != -1) {
+    ) {
+        // ダミーでない需要点を選ぶ
+        if (find_index(demands, *adj_vit) != -1 && (*(this->net_wp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
             adjacents_to_target_facility.push_back(*adj_vit);
         }
+    }
+
+    if (adjacents_to_target_facility.empty()) {
+        // fallback: demandsから選ぶ
+        adjacents_to_target_facility = demands;
     }
 
     // adjacents_to_target_facilityからランダムにひとつ選ぶ
@@ -99,4 +104,61 @@ std::vector<Net_2::vertex_descriptor> WP_SA::generate_neighbor_function(
 
     return neighbor_facilities;
 
+
+}
+
+std::vector<Net_2::vertex_descriptor> WP_SA::generate_neighbor_function_without_jump(
+    const std::vector<Net_2::vertex_descriptor> facilities,
+    const double jump_rate
+) const {
+    std::vector<Net_2::vertex_descriptor> neighbor_facilities = facilities;
+    std::vector<Net_2::vertex_descriptor> demands = this->net_wp.get_demands();
+    
+    // facilitiesからひとつ選んで隣接頂点に移動する
+    size_t facility_num = neighbor_facilities.size();
+    std::uniform_int_distribution<> f_dist(0, facility_num - 1);
+    size_t target_facility_index = f_dist(Random_Engine::get_engine());
+
+    Net_2::vertex_descriptor target_facility = neighbor_facilities.at(target_facility_index);
+    
+    std::uniform_real_distribution<> jump_dist(0.0, 1.0);
+    double jump_rate_sample = jump_dist(Random_Engine::get_engine());
+    if (jump_rate_sample < jump_rate) {
+        // 需要点から選ぶ
+        std::uniform_int_distribution<> demand_dist(0, demands.size() - 1);
+        size_t target_demand_index = demand_dist(Random_Engine::get_engine());
+        swapped_vertex = demands.at(target_demand_index);
+
+        // facilitiesのtarget_facilityをswapped_vertexに置き換える
+        neighbor_facilities.at(target_facility_index) = swapped_vertex;
+    } else {
+        // 隣接頂点だけから選ぶ
+        std::vector<Net_2::vertex_descriptor> adjacents_to_target_facility;
+        Net_2::adjacency_iterator adj_vit, adj_vit_end;
+        for (boost::tie(adj_vit, adj_vit_end) = boost::adjacent_vertices(target_facility, *(this->net_wp.net_ptr)); 
+            adj_vit != adj_vit_end; 
+            ++adj_vit
+        ) {
+            // ダミーでない需要点を選ぶ
+            if (find_index(demands, *adj_vit) != -1 && (*(this->net_wp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
+                adjacents_to_target_facility.push_back(*adj_vit);
+            }
+        }
+
+        if (adjacents_to_target_facility.empty()) {
+            // fallback: demandsから選ぶ
+            adjacents_to_target_facility = demands;
+        }
+
+        // adjacents_to_target_facilityからランダムにひとつ選ぶ
+        std::uniform_int_distribution<> adj_f_dist(0, adjacents_to_target_facility.size() - 1);
+        size_t target_adjacent_index = adj_f_dist(Random_Engine::get_engine());
+        Net_2::vertex_descriptor target_adjacent = adjacents_to_target_facility.at(target_adjacent_index);
+
+        // 隣接頂点に移動
+        // facilitiesのtarget_facilityをtarget_adjacentに置き換える
+        neighbor_facilities.at(target_facility_index) = target_adjacent;
+    }
+
+    return neighbor_facilities;
 }

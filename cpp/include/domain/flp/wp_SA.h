@@ -69,8 +69,19 @@ class WP_SA {
          * @param facilities 
          * @return std::vector<Net_2::vertex_descriptor> 
          *************************************************/
-        std::vector<Net_2::vertex_descriptor> generate_neighbor_function(
+        std::vector<Net_2::vertex_descriptor> generate_neighbor_function_without_jump(
             const std::vector<Net_2::vertex_descriptor> facilities
+        ) const;
+        /*************************************************
+         * @brief 近傍生成関数（ジャンプあり）
+         * 
+         * @param facilities 
+         * @param jump_rate 
+         * @return std::pair<Net_2::vertex_descriptor> 
+         *************************************************/
+        std::pair<Net_2::vertex_descriptor> generate_neighbor_function_with_jump(
+            const std::vector<Net_2::vertex_descriptor> facilities, 
+            const double jump_rate=0.1
         ) const;
 
 };

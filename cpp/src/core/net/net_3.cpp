@@ -636,7 +636,7 @@ std::unordered_set<Net_3::vertex_descriptor> Net_3::calculate_visible_vertices(
 
 std::unordered_set<Net_3::vertex_descriptor> Net_3::calculate_reachable_vertices(
     Point_3 p, 
-    const std::vector<Net_3::vertex_descriptor> prohibited_vertices={}, 
+    const std::vector<Net_3::vertex_descriptor> prohibited_vertices, 
     const double length_constraint) const 
 {
     Net_3::vertex_descriptor orient_node = this->find_nearest_node(p);

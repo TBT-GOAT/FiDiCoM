@@ -262,7 +262,7 @@ int main(int argc, char *argv[]) {
 
             // 到達可能なノードの書き出し
             std::cout << "calculating reachability" << std::endl;
-            std::unordered_set<Net_3::vertex_descriptor> reachable_vertices_3 = rdn_3.calculate_reachable_vertices(p_3, 10000.0);
+            std::unordered_set<Net_3::vertex_descriptor> reachable_vertices_3 = rdn_3.calculate_reachable_vertices(p_3, {}, 10000.0);
 
             std::ofstream i_3(base_path+"reachable_nodes_3.cout");
             for (const auto& v : reachable_vertices_3) {
@@ -326,7 +326,7 @@ int main(int argc, char *argv[]) {
                     return solver_ptr->evaluate_function(solution, mode);
                 }, 
                 [solver_ptr](const Facilities& current_solution){
-                    return solver_ptr->generate_neighbor_function(current_solution);
+                    return solver_ptr->generate_neighbor_function_without_jump(current_solution);
                 }
             );
 

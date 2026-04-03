@@ -107,7 +107,7 @@ std::vector<Net_2::vertex_descriptor> WP_SA::generate_neighbor_function_without_
 
 }
 
-std::vector<Net_2::vertex_descriptor> WP_SA::generate_neighbor_function_without_jump(
+std::vector<Net_2::vertex_descriptor> WP_SA::generate_neighbor_function_with_jump(
     const std::vector<Net_2::vertex_descriptor> facilities,
     const double jump_rate
 ) const {
@@ -127,7 +127,7 @@ std::vector<Net_2::vertex_descriptor> WP_SA::generate_neighbor_function_without_
         // 需要点から選ぶ
         std::uniform_int_distribution<> demand_dist(0, demands.size() - 1);
         size_t target_demand_index = demand_dist(Random_Engine::get_engine());
-        swapped_vertex = demands.at(target_demand_index);
+        Net_2::vertex_descriptor swapped_vertex = demands.at(target_demand_index);
 
         // facilitiesのtarget_facilityをswapped_vertexに置き換える
         neighbor_facilities.at(target_facility_index) = swapped_vertex;

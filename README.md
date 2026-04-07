@@ -1,8 +1,8 @@
 # FiDiCoM
 
-FiDiCoM is a C++ research codebase for spatial analysis using geometric network generation.
-Shortest path calculation, and visibility analysis are available.
-Applications are follows:
+FiDiCoM is a C++ research codebase for spatial analysis using geometric network generation.  
+Shortest path calculation, and visibility analysis are available.  
+Applications are follows:  
 - desire path simulation
 - facility location problem
 

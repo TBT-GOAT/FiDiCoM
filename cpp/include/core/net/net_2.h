@@ -266,7 +266,7 @@ class Net_2 : public Graph_2 {
             const std::vector<Net_2::vertex_descriptor> prohibited_vertices={}
         ) const;
         /*************************************************
-         * @brief 最短経路木から最短経路を復元する
+         * @brief sourceを根とする最短経路木にもとづき、sourceからtargetへの最短経路を復元する
          *
          * @param source
          * @param target

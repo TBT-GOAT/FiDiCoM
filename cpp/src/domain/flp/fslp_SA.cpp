@@ -23,6 +23,7 @@ double FSLP_SA::evaluate_function(
 
     // サービス供給点，サインの変更を記録
     //!generate_neighbor_functionの仕様により，原理的にはひとつしか変更はない
+    // サービス供給点の変更を記録
     std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_facility_vertex_pairs {};
     for (size_t i {0}; i < this->net_fslp.get_facilities().size(); ++i) {
         if (this->net_fslp.get_facilities().at(i) != facilities_and_signs.first.at(i)) {
@@ -38,6 +39,7 @@ double FSLP_SA::evaluate_function(
 
     this->net_fslp.set_facilities(facilities_and_signs.first);
     
+    // サインの変更を記録
     std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_sign_vertex_pairs {};
     for (size_t i {0}; i < this->net_fslp.get_signs().size(); ++i) {
         if (this->net_fslp.get_signs().at(i) != facilities_and_signs.second.at(i)) {

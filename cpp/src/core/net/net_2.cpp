@@ -480,13 +480,14 @@ std::deque<std::pair<Net_2::vertex_descriptor, double>> Net_2::calculate_shortes
         path.push_front(std::make_pair(v, spt.at(v).second));
 
         if (v == source) {
+            // パスが見つかった
             break;
         }
 
         if (spt.at(v).first == v || spt.at(v).first == Net_2::null_vertex()) {
-            // source に到達する前に閉路/孤立へ入った
+            // source に到達できなかった
             throw std::runtime_error(
-                "Invalid shortest path tree: reached a loop or isolated vertex before reaching the source.\n"
+                "Invalid shortest path tree: failed to reach the source.\n"
                 "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
             );
         }

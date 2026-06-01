@@ -1266,6 +1266,7 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost(Net_2::vertex_descriptor dem
 std::pair<size_t, double> Net_SGFLP::calculate_cost_to_visible_facility(Net_2::vertex_descriptor demand, 
                                                                         Net_2::vertex_descriptor facility) const {
 
+    // std::cout << "Calculating cost from demand " << demand << " to visible facility " << facility << std::endl;
     double cost_demand_facility {0.0}; // 需要点 --> サービス供給点
     cost_demand_facility = this->facility_coverage_trees.at(facility).at(demand).second;
 
@@ -1275,22 +1276,47 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost_to_visible_facility(Net_2::v
 
 std::pair<size_t, double> Net_SGFLP::calculate_cost_to_follow_signage(Net_2::vertex_descriptor demand, 
                                                                       Net_2::vertex_descriptor sign) const {
+
+    // std::cout << "Calculating cost from demand " << demand << " to follow signage " << sign << std::endl;
+    
+    // std::cout 
+    // << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
+    // << "\tStart from demand " << std::to_string(demand) << " (" << (*(this->net_ptr))[demand]->x() << ", " << (*(this->net_ptr))[demand]->y() << ")" << std::endl;
+
     double cost {0.0}; // 需要点 --> サイン ... サイン --> サービス供給 or 拠点
     Net_2::vertex_descriptor curr_vertex = demand;
     Net_2::vertex_descriptor next_entity = this->navigation_assignment.at(sign);
     Net_2::vertex_descriptor last_entity;
     while (true) {
         // 次のエンティティへ向かう
-        std::deque<std::pair<Net_2::vertex_descriptor, double>> path = this->net_ptr->calculate_shortest_path(next_entity, 
-                                                                                                              curr_vertex, 
-                                                                                                              this->sign_shortest_path_trees.at(next_entity));
+        const std::vector<std::pair<std::size_t, double>>* shortest_path_tree = nullptr;
+        if (find_index(this->anchors, next_entity) != -1) {
+            shortest_path_tree = &this->anchor_shortest_path_trees.at(next_entity);
+        } else if (find_index(this->signs, next_entity) != -1) {
+            shortest_path_tree = &this->sign_shortest_path_trees.at(next_entity);
+        } else if (find_index(this->facilities, next_entity) != -1) {
+            shortest_path_tree = &this->facility_shortest_path_trees.at(next_entity);
+        } else {
+            throw std::runtime_error(
+                "Next entity in navigation assignment has to be facility, sign or anchor.\n"
+                "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+            );
+        }
+
+        std::deque<std::pair<Net_2::vertex_descriptor, double>> path_r = this->net_ptr->calculate_shortest_path(next_entity, 
+                                                                                                                curr_vertex, 
+                                                                                                                *shortest_path_tree);
         
-        if (path.empty()) {
+        if (path_r.empty()) {
             throw std::runtime_error(
                 "No path from demand to sign.\n"
                 "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
             );  
         }
+
+        // curr_vertex --> next_entity
+        std::deque<std::pair<Net_2::vertex_descriptor, double>> path = path_r; // 経路を反転させる
+        std::reverse(path.begin(), path.end());
 
         std::pair<bool, Net_2::vertex_descriptor> waystop_existance = find_waystop(next_entity, path);
         if (waystop_existance.first) {
@@ -1301,7 +1327,360 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost_to_follow_signage(Net_2::ver
             curr_vertex = waystop_existance.second;
         } else {
             // 次のエンティティまで向かう
-            cost += path.back().second; // curr_vertexからnext_entityへの最短距離
+            cost += path.front().second; // curr_vertexからnext_entityへの最短距離
+            curr_vertex = next_entity;
+        }
+
+        // std::cout 
+        // << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
+        // << "\tArrived at " << std::to_string(curr_vertex) << " (" << (*(this->net_ptr))[curr_vertex]->x() << ", " << (*(this->net_ptr))[curr_vertex]->y() << ")" << std::endl;
+
+        // 次のエンティティを更新
+        if (this->navigation_assignment.find(next_entity) == this->navigation_assignment.end()) {
+            // next_entityが見つからない場合はループを抜ける
+            
+            // next_entityがない場合はサービス供給点、拠点のいずれかであるはずなので、どちらにも見つからない場合はエラー
+            if (find_index(this->facilities, next_entity) == -1 && 
+                find_index(this->anchors, next_entity) == -1) {
+                throw std::runtime_error(
+                    "Last entity in navigation assignment is not found in facilities or anchors.\n"
+                    "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+                );
+            }
+
+            last_entity = next_entity;
+            break;
+        }
+
+        next_entity = this->navigation_assignment.at(next_entity);
+        
+    }
+
+    // 現在地から最後のエンティティまでの距離を加算する
+    // std::cout
+    // << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
+    // << "\tEnd at " << std::to_string(last_entity) << " (" << (*(this->net_ptr))[last_entity]->x() << ", " << (*(this->net_ptr))[last_entity]->y() << ")" << std::endl;
+
+    const std::vector<std::pair<std::size_t, double>>* shortest_path_tree = nullptr;
+    if (find_index(this->anchors, last_entity) != -1) {
+        shortest_path_tree = &this->anchor_shortest_path_trees.at(last_entity);
+    } else if (find_index(this->signs, last_entity) != -1) {
+        shortest_path_tree = &this->sign_shortest_path_trees.at(last_entity);
+    } else if (find_index(this->facilities, last_entity) != -1) {
+        shortest_path_tree = &this->facility_shortest_path_trees.at(last_entity);
+    } else {
+        throw std::runtime_error(
+            "Next entity in navigation assignment has to be facility, sign or anchor.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> path_r = this->net_ptr->calculate_shortest_path(last_entity, 
+                                                                                                            curr_vertex, 
+                                                                                                            *shortest_path_tree);
+    // curr_vertex --> last_entity
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> path = path_r; // 経路を反転させる
+    std::reverse(path.begin(), path.end());
+    
+    cost += path.front().second; // curr_vertexからlast_entityへの最短距離
+
+    return std::make_pair(COST_PATTERN_DinS, cost);
+
+}
+
+std::pair<size_t, double> Net_SGFLP::calculate_cost_to_visible_anchor(Net_2::vertex_descriptor demand, 
+                                                                      Net_2::vertex_descriptor anchor) const {
+
+    // std::cout << "Calculating cost from demand " << demand << " to visible anchor " << anchor << std::endl;
+    double cost_demand_anchor {0.0}; // 需要点 --> 拠点
+    cost_demand_anchor = this->anchor_coverage_trees.at(anchor).at(demand).second;
+
+    return std::make_pair(COST_PATTERN_DinA, cost_demand_anchor);
+
+}
+
+std::pair<size_t, double> Net_SGFLP::calculate_cost_from_uncovered_demand(Net_2::vertex_descriptor demand) const {
+
+    // std::cout 
+    // << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10) 
+    // << "Calculating cost from uncovered demand " << demand 
+    // << " (" << (*(this->net_ptr))[demand]->x() << ", " << (*(this->net_ptr))[demand]->y() << ")" << std::endl;
+    
+    double cost {0.0};
+
+    // まず最初に、最寄りの拠点に向かう
+    const std::vector<std::pair<Net_2::vertex_descriptor, double>>* assignment_tree = &this->anchor_shortest_path_tree;
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> first_path_r = this->net_ptr->calculate_shortest_path(dummy_vertex_anchors, 
+                                                                                                                  demand, 
+                                                                                                                  *assignment_tree);
+    
+    if (first_path_r.empty()) {
+        throw std::runtime_error(
+            "demand can not reach any anchor.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    // demand --> target_anchor
+    first_path_r.pop_front(); // ダミーノードを経路から削除する
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> first_path = first_path_r; // 経路を反転させる
+    std::reverse(first_path.begin(), first_path.end());
+
+    // 経路上にエンティティを認識できる地点があるか確認する
+    Net_2::vertex_descriptor target_anchor = first_path.back().first; // 最寄りの拠点
+    std::tuple<int, Net_2::vertex_descriptor, Net_2::vertex_descriptor> waystop_existance = find_first_entity(first_path);
+    
+    int first_entity_type;
+    Net_2::vertex_descriptor way_stop;
+    Net_2::vertex_descriptor assigned_entity;
+    std::tie(first_entity_type, way_stop, assigned_entity) = waystop_existance;
+    
+    // 最初に認識するエンティティで場合分け
+    size_t _; 
+    double remaining_cost {0.0};
+    switch (first_entity_type) {
+        case -1:
+            // std::cout << "\tNo waystop on the way to nearest anchor." << std::endl;        
+            cost = first_path.front().second - first_path.back().second; // 需要点から拠点までの距離
+            return std::make_pair(COST_PATTERN_Duncovered, cost);
+            break;
+        case 0:
+            // std::cout << "\tFirst entity on the way to nearest anchor is anchor " << way_stop << "." << std::endl;
+            
+            // 需要点から中継地点までの距離を加算する
+            cost += calculate_cost_on_path(demand, way_stop, first_path);
+            
+            // 中継地点からの距離を加算する
+            std::tie(_, remaining_cost) = calculate_cost_to_visible_anchor(way_stop, assigned_entity);
+            cost += remaining_cost;
+
+            return std::make_pair(COST_PATTERN_DoutA, cost);
+            
+            break;
+        case 1:
+            // std::cout << "\tFirst entity on the way to nearest anchor is facility " << way_stop << "." << std::endl;
+            
+            // 需要点から中継地点までの距離を加算する
+            cost += calculate_cost_on_path(demand, way_stop, first_path);
+
+            // 中継地点からの距離を加算する
+            std::tie(_, remaining_cost) = calculate_cost_to_visible_facility(way_stop, assigned_entity);
+            cost += remaining_cost;
+
+            return std::make_pair(COST_PATTERN_DoutF, cost);
+
+            break;
+        case 2:
+            // std::cout << "\tFirst entity on the way to nearest anchor is sign " << way_stop << "." << std::endl;
+            
+            // 需要点から中継地点までの距離を加算する
+            cost += calculate_cost_on_path(demand, way_stop, first_path);
+
+            // 中継地点からの距離を加算する
+            std::tie(_, remaining_cost) = calculate_cost_to_follow_signage(way_stop, assigned_entity);
+            cost += remaining_cost;
+
+            return std::make_pair(COST_PATTERN_DoutS, cost);
+            
+            break;
+        default:
+            throw std::runtime_error(
+                "Invalid entity type found on the way to nearest anchor.\n"
+                "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+            );
+    }
+    
+}
+
+std::pair<bool, Net_2::vertex_descriptor> Net_SGFLP::find_waystop(Net_2::vertex_descriptor destination,
+                                                                  const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path) const {
+    //!注意
+    //!pathは (start, total_distance) --> ... --> (destination, 0.0) の形式で、頂点とその頂点までの距離のペアの列であることを想定している
+    // destinationがサービス供給点、サイン、拠点のどれであるかによって、
+    // 可視範囲を確認する割当を切り替える
+    // 優先順位は、拠点、サービス供給点、サイン
+    const std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor>* destination_assignment_to_demand = nullptr;
+    if (find_index(this->anchors, destination) != -1) {
+        destination_assignment_to_demand = &this->anchor_assignment_to_demand;
+    } else if (find_index(this->facilities, destination) != -1) {
+        destination_assignment_to_demand = &this->facility_assignment_to_demand;
+    } else if (find_index(this->signs, destination) != -1) {
+        destination_assignment_to_demand = &this->sign_assignment_to_demand;
+    } else {
+        throw std::runtime_error(
+            "Destination " + std::to_string(destination) + " has to be facility, sign or anchor.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    // destination を認識できる経路上の頂点を探索する
+    for (const auto& v_on_the_way : path) {
+        if (destination_assignment_to_demand->find(v_on_the_way.first) != destination_assignment_to_demand->end() &&
+            (*destination_assignment_to_demand).at(v_on_the_way.first) == destination) {
+            // destinationを認識できる途中の頂点が見つかった
+            return std::make_pair(true, v_on_the_way.first);
+        }
+    }
+
+    return std::make_pair(false, 0);
+
+}
+
+std::tuple<int, 
+           Net_2::vertex_descriptor, 
+           Net_2::vertex_descriptor> Net_SGFLP::find_first_entity(const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path) const {
+    //!注意
+    //!pathは (start, total_distance) --> ... --> (destination, 0.0) の形式で、頂点とその頂点までの距離のペアの列であることを想定している
+    for (const auto& v_on_the_way : path) {
+        if (this->anchor_assignment_to_demand.find(v_on_the_way.first) != this->anchor_assignment_to_demand.end()) {
+            // 拠点
+            return std::make_tuple(0, v_on_the_way.first, this->anchor_assignment_to_demand.at(v_on_the_way.first));
+        } else if (this->facility_assignment_to_demand.find(v_on_the_way.first) != this->facility_assignment_to_demand.end()) {
+            // サービス供給点
+            return std::make_tuple(1, v_on_the_way.first, this->facility_assignment_to_demand.at(v_on_the_way.first));
+        } else if (this->sign_assignment_to_demand.find(v_on_the_way.first) != this->sign_assignment_to_demand.end()) {
+            // サイン
+            return std::make_tuple(2, v_on_the_way.first, this->sign_assignment_to_demand.at(v_on_the_way.first));
+        }
+    }
+    return std::make_tuple(-1, 0, 0);
+}
+
+double Net_SGFLP::calculate_cost_on_path(Net_2::vertex_descriptor s, 
+                                         Net_2::vertex_descriptor t, 
+                                         const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path) const {
+    //!注意
+    //!pathは (o, total_distance) --> ... --> (d, 0.0) の形式で、頂点とその頂点までの距離のペアの列であることを想定している
+    double cost {0.0};
+    double cost_s {-1.0};
+    double cost_t {-1.0};
+    for (const auto& v : path) {
+        if (v.first == s) {
+            cost_s = v.second;
+        } 
+        if (v.first == t) {
+            cost_t = v.second;
+        }
+        if (cost_s != -1.0 && cost_t != -1.0) {
+            // s, t両方の距離が見つかったらループを抜ける
+            break;
+        }
+    }
+
+    if (cost_s == -1.0 || cost_t == -1.0) {
+        throw std::runtime_error(
+            "Both start " + std::to_string(s) + " and target " + std::to_string(t) + " have to be on the path.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    cost = cost_s - cost_t; // s --> t の距離は、sまでの距離 - tまでの距離で求められる
+
+    if (cost < 0.0) {
+        throw std::runtime_error(
+            "Cost on path from " + std::to_string(s) + " to " + std::to_string(t) + " cannot be negative.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    return cost;
+
+}
+
+//** Path Calculation Methods **//
+std::pair<size_t, std::vector<Net_2::vertex_descriptor>> Net_SGFLP::calculate_path(Net_2::vertex_descriptor demand) const {
+    std::pair<bool, Net_2::vertex_descriptor> assigned_facility = this->get_assigned_facility_to_demand(demand);
+    std::pair<bool, Net_2::vertex_descriptor> assigned_sign = this->get_assigned_sign_to_demand(demand);
+    std::pair<bool, Net_2::vertex_descriptor> assigned_anchor = this->get_assigned_anchor_to_demand(demand);
+
+    if (assigned_anchor.first) {
+        // 拠点が割り当てられている場合
+        return calculate_path_to_visible_anchor(demand, assigned_anchor.second);
+    } else if (assigned_facility.first) {
+        // サービス供給点が割り当てられている場合
+        return calculate_path_to_visible_facility(demand, assigned_facility.second);
+    } else if (assigned_sign.first) {
+        // サインが割り当てられている場合
+        return calculate_path_to_follow_signage(demand, assigned_sign.second);
+    } else {
+        // 何も割り当てられていない場合
+        return calculate_path_from_uncovered_demand(demand);
+    }
+
+}
+
+std::pair<size_t, std::vector<Net_2::vertex_descriptor>> Net_SGFLP::calculate_path_to_visible_facility(Net_2::vertex_descriptor demand, 
+                                                                                                       Net_2::vertex_descriptor facility) const {
+    std::vector<Net_2::vertex_descriptor> path; // 需要点 --> サービス供給点への経路
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> path_r = this->net_ptr->calculate_shortest_path(facility, demand, this->facility_coverage_trees.at(facility));
+    
+    if (path_r.empty()) {   
+        throw std::runtime_error(
+            "No path from demand to assigned facility.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    // 需要点 --> サービス供給点への経路を反転させる
+    std::reverse(path_r.begin(), path_r.end());
+    for (const auto& v : path_r) {
+        path.push_back(v.first);
+    }
+
+    return std::make_pair(COST_PATTERN_DinF, path);
+}
+
+std::pair<size_t, std::vector<Net_2::vertex_descriptor>> Net_SGFLP::calculate_path_to_follow_signage(Net_2::vertex_descriptor demand, 
+                                                                                                     Net_2::vertex_descriptor sign) const {
+    std::vector<Net_2::vertex_descriptor> path; // 需要点 --> サイン --> サービス供給点 or 拠点への経路
+    Net_2::vertex_descriptor curr_vertex = demand;
+    Net_2::vertex_descriptor next_entity = this->navigation_assignment.at(sign);
+    Net_2::vertex_descriptor last_entity;
+    while (true) {
+        // 次のエンティティへ向かう
+        const std::vector<std::pair<std::size_t, double>>* shortest_path_tree = nullptr;
+        if (find_index(this->anchors, next_entity) != -1) {
+            shortest_path_tree = &this->anchor_shortest_path_trees.at(next_entity);
+        } else if (find_index(this->signs, next_entity) != -1) {
+            shortest_path_tree = &this->sign_shortest_path_trees.at(next_entity);
+        } else if (find_index(this->facilities, next_entity) != -1) {
+            shortest_path_tree = &this->facility_shortest_path_trees.at(next_entity);
+        } else {
+            throw std::runtime_error(
+                "Next entity in navigation assignment has to be facility, sign or anchor.\n"
+                "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+            );
+        }
+
+        std::deque<std::pair<Net_2::vertex_descriptor, double>> path_r = this->net_ptr->calculate_shortest_path(next_entity, 
+                                                                                                                curr_vertex, 
+                                                                                                                *shortest_path_tree);
+        
+        if (path_r.empty()) {
+            throw std::runtime_error(
+                "No path from demand to sign.\n"
+                "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+            );  
+        }
+
+        // curr_vertex --> next_entity
+        std::reverse(path_r.begin(), path_r.end());
+
+        std::pair<bool, Net_2::vertex_descriptor> waystop_existance = find_waystop(next_entity, path_r);
+        std::vector<Net_2::vertex_descriptor> mid_path;
+        if (waystop_existance.first) {
+            // 中継地点がある場合は、そこまで向かう
+            mid_path = calculate_path_between(curr_vertex, 
+                                              waystop_existance.second, 
+                                              path_r);
+            path.insert(path.end(), mid_path.begin(), mid_path.end()); // 経路に中継地点までの経路を追加する
+            curr_vertex = waystop_existance.second;
+        } else {
+            // 次のエンティティまで向かう
+            mid_path = calculate_path_between(curr_vertex, 
+                                              next_entity, 
+                                              path_r);
+            path.insert(path.end(), mid_path.begin(), mid_path.end()); // 経路に次のエンティティまでの経路を追加する
             curr_vertex = next_entity;
         }
 
@@ -1326,154 +1705,150 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost_to_follow_signage(Net_2::ver
         
     }
 
-    // 現在地から最後のエンティティまでの距離を加算する
-    std::deque<std::pair<Net_2::vertex_descriptor, double>> path = this->net_ptr->calculate_shortest_path(last_entity, 
-                                                                                                          curr_vertex, 
-                                                                                                          this->sign_shortest_path_trees.at(last_entity));
-    cost += path.back().second; // curr_vertexからlast_entityへの最短距離
+    // 現在地から最後のエンティティまでの経路を追加する
+    const std::vector<std::pair<std::size_t, double>>* shortest_path_tree = nullptr;
+    if (find_index(this->anchors, last_entity) != -1) {
+        shortest_path_tree = &this->anchor_shortest_path_trees.at(last_entity);
+    } else if (find_index(this->signs, last_entity) != -1) {
+        shortest_path_tree = &this->sign_shortest_path_trees.at(last_entity);
+    } else if (find_index(this->facilities, last_entity) != -1) {
+        shortest_path_tree = &this->facility_shortest_path_trees.at(last_entity);
+    } else {
+        throw std::runtime_error(
+            "Next entity in navigation assignment has to be facility, sign or anchor.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
 
-    return std::make_pair(COST_PATTERN_DinS, cost);
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> final_path_r = this->net_ptr->calculate_shortest_path(last_entity, 
+                                                                                                                  curr_vertex, 
+                                                                                                                  *shortest_path_tree);
+    // curr_vertex --> last_entity
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> final_path = final_path_r; // 経路を反転させる
+    std::reverse(final_path.begin(), final_path.end());
+    std::vector<Net_2::vertex_descriptor> final_path_vec = calculate_path_between(curr_vertex, last_entity, final_path);
+    path.insert(path.end(), final_path_vec.begin(), final_path_vec.end()); // 経路に現在地から最後のエンティティまでの経路を追加する
 
+    return std::make_pair(COST_PATTERN_DinS, path);
 }
 
-std::pair<size_t, double> Net_SGFLP::calculate_cost_to_visible_anchor(Net_2::vertex_descriptor demand, 
-                                                                      Net_2::vertex_descriptor anchor) const {
+std::pair<size_t, std::vector<Net_2::vertex_descriptor>> Net_SGFLP::calculate_path_to_visible_anchor(Net_2::vertex_descriptor demand, 
+                                                                                                     Net_2::vertex_descriptor anchor) const {
+    std::vector<Net_2::vertex_descriptor> path; // 需要点 --> 拠点への経路
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> path_r = this->net_ptr->calculate_shortest_path(anchor, demand, this->anchor_coverage_trees.at(anchor));
+    
+    if (path_r.empty()) {   
+        throw std::runtime_error(
+            "No path from demand to assigned anchor.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
 
-    double cost_demand_anchor {0.0}; // 需要点 --> 拠点
-    cost_demand_anchor = this->anchor_coverage_trees.at(anchor).at(demand).second;
+    // 需要点 --> 拠点への経路を反転させる
+    std::reverse(path_r.begin(), path_r.end());
+    for (const auto& v : path_r) {
+        path.push_back(v.first);
+    }
 
-    return std::make_pair(COST_PATTERN_DinA, cost_demand_anchor);
-
+    return std::make_pair(COST_PATTERN_DinA, path);
+    
 }
 
-std::pair<size_t, double> Net_SGFLP::calculate_cost_from_uncovered_demand(Net_2::vertex_descriptor demand) const {
-    double cost {0.0};
-
+std::pair<size_t, std::vector<Net_2::vertex_descriptor>> Net_SGFLP::calculate_path_from_uncovered_demand(Net_2::vertex_descriptor demand) const {
+    std::vector<Net_2::vertex_descriptor> path;
+    
     // まず最初に、最寄りの拠点に向かう
     const std::vector<std::pair<Net_2::vertex_descriptor, double>>* assignment_tree = &this->anchor_shortest_path_tree;
-    std::deque<std::pair<Net_2::vertex_descriptor, double>> first_path = this->net_ptr->calculate_shortest_path(demand, 
-                                                                                                                dummy_vertex_anchors, 
-                                                                                                                *assignment_tree);
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> first_path_r = this->net_ptr->calculate_shortest_path(dummy_vertex_anchors, 
+                                                                                                                  demand, 
+                                                                                                                  *assignment_tree);
     
-    if (first_path.empty()) {
+    if (first_path_r.empty()) {
         throw std::runtime_error(
             "demand can not reach any anchor.\n"
             "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
         );
     }
 
-    first_path.pop_back(); // ダミーノードを経路から削除する
+    // demand --> target_anchor
+    first_path_r.pop_front(); // ダミーノードを経路から削除する
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> first_path = first_path_r; // 経路を反転させる
+    std::reverse(first_path.begin(), first_path.end());
 
-    // 経路上に中継地点があるか確認する
-    std::pair<bool, Net_2::vertex_descriptor> waystop_existance = find_waystop(dummy_vertex_anchors, first_path);
+    // 経路上にエンティティを認識できる地点があるか確認する
+    Net_2::vertex_descriptor target_anchor = first_path.back().first; // 最寄りの拠点
+    std::tuple<int, Net_2::vertex_descriptor, Net_2::vertex_descriptor> waystop_existance = find_first_entity(first_path);
     
-    if (!waystop_existance.first) {
-        // 中継地点がない場合は、そこまで向かう
-        cost = first_path.front().second - first_path.back().second; // 需要点から中継地点までの距離
-        return std::make_pair(COST_PATTERN_Duncovered, cost);
-    }
-
-    // 中継地点がある場合
-    Net_2::vertex_descriptor way_stop = waystop_existance.second;
-
-    // 需要点から中継地点までの距離を加算する
-    cost += calculate_cost_on_path(demand, way_stop, first_path);
-
-    // 中継地点をカバーしているエンティティで場合分け
+    int first_entity_type;
+    Net_2::vertex_descriptor way_stop;
+    Net_2::vertex_descriptor assigned_entity;
+    std::tie(first_entity_type, way_stop, assigned_entity) = waystop_existance;
+    
+    // 最初に認識するエンティティで場合分け
     size_t _; 
-    double remaining_cost {0.0};
+    std::vector<Net_2::vertex_descriptor> remaining_path;
+    switch (first_entity_type) {
+        case -1:
+            path = calculate_path_between(demand, target_anchor, first_path);
+            return std::make_pair(COST_PATTERN_Duncovered, path);
+            break;
+        case 0:
+            // 需要点から中継地点までの距離を加算する
+            path = calculate_path_between(demand, way_stop, first_path);
+            
+            // 中継地点からの距離を加算する
+            std::tie(_, remaining_path) = calculate_path_to_visible_anchor(way_stop, assigned_entity);
+            path.insert(path.end(), remaining_path.begin(), remaining_path.end());
 
-    std::pair<bool, Net_2::vertex_descriptor> assigned_facility = this->get_assigned_facility_to_demand(way_stop);
-    std::pair<bool, Net_2::vertex_descriptor> assigned_sign = this->get_assigned_sign_to_demand(way_stop);
-    std::pair<bool, Net_2::vertex_descriptor> assigned_anchor = this->get_assigned_anchor_to_demand(way_stop);
+            return std::make_pair(COST_PATTERN_DoutA, path);
+            
+            break;
+        case 1:
+            // 需要点から中継地点までの距離を加算する
+            path = calculate_path_between(demand, way_stop, first_path);
 
-    if (assigned_anchor.first) {
-        // 拠点が割り当てられている場合
-        std::tie(_, remaining_cost) = calculate_cost_to_visible_anchor(way_stop, assigned_anchor.second);
-        cost += remaining_cost;
-        return std::make_pair(COST_PATTERN_DoutA, cost);
-        
-    } else if (assigned_facility.first) {
-        // サービス供給点が割り当てられている場合
-        std::tie(_, remaining_cost) = calculate_cost_to_visible_facility(way_stop, assigned_facility.second);
-        cost += remaining_cost;
-        return std::make_pair(COST_PATTERN_DoutF, cost);
+            // 中継地点からの距離を加算する
+            std::tie(_, remaining_path) = calculate_path_to_visible_facility(way_stop, assigned_entity);
+            path.insert(path.end(), remaining_path.begin(), remaining_path.end());
 
-    } else if (assigned_sign.first) {
-        // サインが割り当てられている場合
-        std::tie(_, remaining_cost) = calculate_cost_to_follow_signage(way_stop, assigned_sign.second);
-        cost += remaining_cost;
-        return std::make_pair(COST_PATTERN_DoutS, cost);
+            return std::make_pair(COST_PATTERN_DoutF, path);
 
-    } else {
-        throw std::runtime_error(
-            "Waystop has to be covered by some entity.\n"
-            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
-        );
+            break;
+        case 2:
+            // 需要点から中継地点までの距離を加算する
+            path = calculate_path_between(demand, way_stop, first_path);
+
+            // 中継地点からの距離を加算する
+            std::tie(_, remaining_path) = calculate_path_to_follow_signage(way_stop, assigned_entity);
+            path.insert(path.end(), remaining_path.begin(), remaining_path.end());
+
+            return std::make_pair(COST_PATTERN_DoutS, path);
+            
+            break;
+        default:
+            throw std::runtime_error(
+                "Invalid entity type found on the way to nearest anchor.\n"
+                "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+            );
     }
-    
-}
-
-std::pair<bool, Net_2::vertex_descriptor> Net_SGFLP::find_waystop(Net_2::vertex_descriptor destination,
-                                                                  const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path) const {
-    // destinationがサービス供給点、サイン、拠点のどれであるかによって、
-    // 可視範囲を確認するマップを切り替える
-    // 優先順位は、拠点、サービス供給点、サイン
-    const std::vector<std::pair<Net_2::vertex_descriptor, double>>* destination_coverage_tree = nullptr;
-    if (find_index(this->anchors, destination) != -1) {
-        destination_coverage_tree = &this->anchor_coverage_trees.at(destination);
-    } else if (find_index(this->facilities, destination) != -1) {
-        destination_coverage_tree = &this->facility_coverage_trees.at(destination);
-    } else if (find_index(this->signs, destination) != -1) {
-        destination_coverage_tree = &this->sign_coverage_trees.at(destination);
-    } else {
-        throw std::runtime_error(
-            "Destination has to be facility, sign or anchor.\n"
-            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
-        );
-    }
-
-    // destination を認識できる経路上の頂点を探索する
-    std::unordered_set<Net_2::vertex_descriptor> coverage_parents;
-    coverage_parents.reserve(destination_coverage_tree->size());
-    for (const auto& coverage : *destination_coverage_tree) {
-        coverage_parents.insert(coverage.first);
-    }
-
-    for (const auto& v_on_the_way : path) {
-        if (coverage_parents.find(v_on_the_way.first) != coverage_parents.end()) {
-            // destinationを認識できる途中の頂点が見つかった
-            return std::make_pair(true, v_on_the_way.first);
-        }
-    }
-
-    return std::make_pair(false, 0);
 
 }
 
-double Net_SGFLP::calculate_cost_on_path(Net_2::vertex_descriptor s, 
-                                         Net_2::vertex_descriptor t, 
-                                         const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path) const {
-    double cost {0.0};
-    double cost_s {-1.0};
-    double cost_t {-1.0};
-    for (const auto& v : path) {
-        if (v.first == s) {
-            cost_s = v.second;
-        } else if (v.first == t) {
-            cost_t = v.second;
-        } else {
-            continue;
+std::vector<Net_2::vertex_descriptor> Net_SGFLP::calculate_path_between(Net_2::vertex_descriptor s,
+                                                                        Net_2::vertex_descriptor t,
+                                                                        const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path) const {
+    std::vector<Net_2::vertex_descriptor> result;
+    bool start_adding = false;
+    for (const auto& p : path) {
+        if (p.first == s) {
+            start_adding = true;
+        }
+        if (start_adding) {
+            result.push_back(p.first);
+        }
+        if (p.first == t) {
+            break;
         }
     }
-
-    if (cost_s == -1.0 || cost_t == -1.0) {
-        throw std::runtime_error(
-            "Both origin and destination have to be on the path.\n"
-            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
-        );
-    }
-
-    return cost_s - cost_t;
-
+    return result;
 }

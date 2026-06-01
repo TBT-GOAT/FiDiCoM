@@ -498,7 +498,7 @@ class Net_SGFLP {
          *************************************************/
         std::pair<size_t, double> calculate_cost_from_uncovered_demand(Net_2::vertex_descriptor demand) const;
         /*************************************************
-         * @brief 経路上の2頂点間のコストを計算する
+         * @brief 経路（o --> s --> t --> d）上の2頂点間のコストを計算する
          * 
          * @param s 
          * @param t 
@@ -509,15 +509,78 @@ class Net_SGFLP {
                                       Net_2::vertex_descriptor t,
                                       const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path) const;
         /*************************************************
-         * @brief 経路上の中継地点（エンティティ（destination）に割当済の頂点）を探索する
-         * 
-         * @param origin 
+         * @brief 経路（origin --> destination）上の中継地点（エンティティ（destination）に割当済の頂点）を探索する
+         * @details origin は path の先頭の頂点、destination は path の途中の頂点であることを想定している 
          * @param destination
          * @param path 
          * @return std::pair<bool, Net_2::vertex_descriptor> 
          *************************************************/
         std::pair<bool, Net_2::vertex_descriptor> find_waystop(Net_2::vertex_descriptor destination,
                                                                const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path) const;
+        /*************************************************
+         * @brief 経路上で最初に認識できるエンティティを探索する
+         * 
+         * @param path 
+         * @return std::tuple<int, Net_2::vertex_descriptor,Net_2::vertex_descriptor> 
+         * 0: 拠点、1: サービス供給点、2: サイン、-1: どのエンティティも認識できない
+         * 最初のNet_2::vertex_descriptorは最初にエンティティを認識する頂点
+         * 次のNet_2::vertex_descriptorはその頂点が割り当てられたエンティティ
+         *************************************************/
+        std::tuple<int, 
+                   Net_2::vertex_descriptor, 
+                   Net_2::vertex_descriptor> find_first_entity(const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path) const;
+
+        //** Path Calculation Methods **//
+        /*************************************************
+         * @brief 需要点に対する経路を計算する
+         * 
+         * @param demand 
+         * @return std::pair<size_t, std::vector<Net_2::vertex_descriptor>> コストのパターン, 経路 
+         *************************************************/
+        std::pair<size_t, std::vector<Net_2::vertex_descriptor>> calculate_path(Net_2::vertex_descriptor demand) const;
+        /*************************************************
+         * @brief 見えている最寄りのサービス供給点に向かうときの経路を計算する
+         * 
+         * @param demand 
+         * @return std::pair<size_t, std::vector<Net_2::vertex_descriptor>> コストのパターン, 経路 
+         *************************************************/
+        std::pair<size_t, std::vector<Net_2::vertex_descriptor>> calculate_path_to_visible_facility(Net_2::vertex_descriptor demand, 
+                                                                                                     Net_2::vertex_descriptor facility) const;
+        /*************************************************
+         * @brief サインに従うときの経路を計算する
+         * 
+         * @param demand 
+         * @return std::pair<size_t, std::vector<Net_2::vertex_descriptor>> コストのパターン, 経路 
+         *************************************************/
+        std::pair<size_t, std::vector<Net_2::vertex_descriptor>> calculate_path_to_follow_signage(Net_2::vertex_descriptor demand, 
+                                                                                                   Net_2::vertex_descriptor sign) const;
+        /*************************************************
+         * @brief 見えている最寄りの拠点に向かうときの経路を計算する
+         * 
+         * @param demand 
+         * @return std::pair<size_t, std::vector<Net_2::vertex_descriptor>> コストのパターン, 経路 
+         *************************************************/
+        std::pair<size_t, std::vector<Net_2::vertex_descriptor>> calculate_path_to_visible_anchor(Net_2::vertex_descriptor demand, 
+                                                                                                   Net_2::vertex_descriptor anchor) const;
+        /*************************************************
+         * @brief どのエンティティも不可視の需要点からの経路を計算する
+         * 
+         * @param demand 
+         * @return std::pair<size_t, std::vector<Net_2::vertex_descriptor>> コストのパターン, 経路 
+         *************************************************/
+        std::pair<size_t, std::vector<Net_2::vertex_descriptor>> calculate_path_from_uncovered_demand(Net_2::vertex_descriptor demand) const;
+        /*************************************************
+         * @brief 経路（o --> s --> t --> d）上の2頂点間の経路を計算する
+         * 
+         * @param s 
+         * @param t 
+         * @param path 
+         * @return std::vector<Net_2::vertex_descriptor>                                 
+         *************************************************/
+        std::vector<Net_2::vertex_descriptor> calculate_path_between(Net_2::vertex_descriptor s,
+                                                                     Net_2::vertex_descriptor t,
+                                                                     const std::deque<std::pair<Net_2::vertex_descriptor, double>>& path) const;
+
 
 };
 

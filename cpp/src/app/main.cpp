@@ -33,6 +33,8 @@ using json = nlohmann::json;
 #include "domain/flp/wp_SA.h"
 #include "domain/flp/net_fslp.h"
 #include "domain/flp/fslp_SA.h"
+#include "domain/flp/net_sgflp.h"
+#include "domain/flp/sgflp_SA.h"
 
 // include WTSN
 #include "domain/wtsn/pedestrian.h"
@@ -2432,6 +2434,237 @@ int main(int argc, char *argv[]) {
             k.close();
 
             break;
+        }
+
+        case 18: {
+            // Sign-Guided Facility Location Problem のテスト
+
+            typedef std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> Facilities_Signs_Pair;
+
+            //* データフォルダの入力
+            std::string data_folder_path;
+            std::cout << "Enter the data folder path: ";
+            std::cin >> data_folder_path;
+
+            //* 入力情報の読み込み
+            Polygon_2 domain;                                           // 対象領域
+            std::vector<std::shared_ptr<Obstacle_2>> walls;         // 壁（通過不可、不可視）
+            std::vector<std::shared_ptr<Obstacle_2>> barriers;          // 障壁（通過不可、可視）
+            std::vector<std::shared_ptr<Obstacle_2>> domain_segments;   // 対象領域の外形線
+            std::vector<Point_2> anchors;                           // 拠点
+            Point_2 inner_point;                                        // 対象領域内部にある点
+            std::vector<Point_2> default_facility_points;                    // 現状のサービス供給点の座標
+            std::vector<Point_2> default_sign_points;                    // 現状のサービス供給点の座標
+
+            std::string input_data_folder = data_folder_path + "/input/";
+            std::string domain_f_path = input_data_folder + "domain.cin";
+            std::string walls_f_path = input_data_folder + "walls.cin";
+            std::string barriers_f_path = input_data_folder + "barriers.cin";
+            std::string default_facility_points_f_path = input_data_folder + "facilities.cin";
+            std::string default_sign_points_f_path = input_data_folder + "signs.cin";
+            std::string anchors_f_path = input_data_folder + "anchors.cin";
+            std::string inner_point_f_path = input_data_folder + "inner_point.cin";
+
+            // 対象領域
+            domain = Net_2::read_domain(domain_f_path);
+            
+            // 障害物
+            walls = Obstacle_2::read_obstacles(walls_f_path);
+            barriers = Obstacle_2::read_obstacles(barriers_f_path);
+            domain_segments = Obstacle_2::convert_polygon(domain, 
+                                            false, 
+                                            false, 
+                                            true, 
+                                            Obstacle_2::DOMAIN_NAME);
+
+            std::vector<std::shared_ptr<Obstacle_2>> obstacles;
+            obstacles.insert(obstacles.end(), walls.begin(), walls.end());
+            obstacles.insert(obstacles.end(), barriers.begin(), barriers.end());
+            obstacles.insert(obstacles.end(), domain_segments.begin(), domain_segments.end());
+            
+            // 内部点
+            std::ifstream inner_point_file(inner_point_f_path);
+            double x, y;
+            inner_point_file >> x >> y;
+            inner_point = Point_2(x, y);
+            inner_point_file.close();
+
+            // サービス供給点
+            std::ifstream default_facility_points_file(default_facility_points_f_path);
+
+            if (!default_facility_points_file.is_open()) {
+                std::cerr << "Could not open the default facility points file!" << std::endl;
+            } 
+
+            std::string fline;
+            double fx;
+            double fy;
+            while (std::getline(default_facility_points_file, fline)) {
+                std::istringstream fline_stream(fline);
+                fline_stream >> fx >> fy;
+                default_facility_points.emplace_back(fx, fy);
+            }
+            default_facility_points_file.close();
+        
+            // サイン
+            std::ifstream default_sign_points_file(default_sign_points_f_path);
+
+            if (!default_sign_points_file.is_open()) {
+                std::cerr << "Could not open the default sign points file!" << std::endl;
+            } 
+
+            std::string sline;
+            double sx;
+            double sy;
+            while (std::getline(default_sign_points_file, sline)) {
+                std::istringstream sline_stream(sline);
+                sline_stream >> sx >> sy;
+                default_sign_points.emplace_back(sx, sy);
+            }
+            default_sign_points_file.close();
+
+            // 拠点
+            std::ifstream anchors_file(anchors_f_path);
+
+            if (!anchors_file.is_open()) {
+                std::cerr << "Could not open the anchors file!" << std::endl;
+            }
+
+            std::string aline;
+            double ax;
+            double ay;
+            while (std::getline(anchors_file, aline)) {
+                std::istringstream aline_stream(aline);
+                aline_stream >> ax >> ay;
+                anchors.emplace_back(ax, ay);
+            }
+            anchors_file.close();
+
+            // ランダムドロネー網の初期化
+            std::cout << "initializing" << std::endl;
+            rDn_2 rdn(10000, domain);
+            rdn.initialize();
+            rdn.disconnect_edges(obstacles);
+
+            std::shared_ptr<Net_2> rdn_ptr = std::make_shared<rDn_2>(rdn);
+            Net_SGFLP net_sgflp(rdn_ptr);
+            net_sgflp.set_facility_visible_length(10000.0); 
+            net_sgflp.set_sign_visible_length(50000.0); 
+            net_sgflp.set_anchor_visible_length(100000.0); 
+            net_sgflp.set_demands(inner_point);
+            net_sgflp.initialize_facilities(default_facility_points);
+            net_sgflp.initialize_signs(default_sign_points);
+            net_sgflp.initialize_anchors(anchors);
+            
+            // 割当の作成
+            std::cout << "building trees and assignments" << std::endl;
+            size_t optim_mode = SGFLP_SA::MODE_MINSUM;
+            std::shared_ptr<SGFLP_SA> solver_ptr = std::make_shared<SGFLP_SA>(net_sgflp);
+            Facilities_Signs_Pair default_solution = std::make_pair(net_sgflp.get_facilities(), net_sgflp.get_signs());
+            double cost = solver_ptr->evaluate_function(default_solution, optim_mode);
+
+            // 保存先の設定
+            std::string output_data_folder = data_folder_path + "/output/";
+            
+            // ディレクトリがなければ作る
+            if (!std::filesystem::exists(output_data_folder)) {
+                std::filesystem::create_directories(output_data_folder);
+            }
+            
+            std::string node_f_path {output_data_folder + "nodes.cout"};
+            std::string edge_f_path {output_data_folder + "edges.cout"};
+            std::string adjacency_f_path {output_data_folder + "adjacency.cout"};
+            std::ofstream facility_assignment_to_demand_f_path(output_data_folder + "facility_assignment_to_demand.cout");
+            std::ofstream sign_assignment_to_demand_f_path(output_data_folder + "sign_assignment_to_demand.cout");
+            std::ofstream anchor_assignment_to_demand_f_path(output_data_folder + "anchor_assignment_to_demand.cout");
+            std::ofstream navigation_assignment_f_path(output_data_folder + "navigation_assignment.cout");
+            std::ofstream anchor_shortest_path_tree_f_path(output_data_folder + "anchor_shortest_path_tree.cout");
+            std::ofstream paths_f_path(output_data_folder + "paths.cout");
+
+            // ネットワークの書き出し
+            rdn.write_nodes(node_f_path);
+            rdn.write_edges(edge_f_path);
+            rdn.write_adjacency(adjacency_f_path, Net_2::MODE_ROUTE);
+            
+            // サービス供給点の割当の確認
+            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> facility_assignment_to_demand = solver_ptr->net_sgflp.get_facility_assignment_to_demand();
+            for (const auto& [demand, faility] : facility_assignment_to_demand) {
+                if (demand == faility) continue;
+
+                facility_assignment_to_demand_f_path
+                << demand << " "
+                << faility << std::endl;
+            }
+
+            // サインの割当の確認
+            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> sign_assignment_to_demand = solver_ptr->net_sgflp.get_sign_assignment_to_demand();
+            for (const auto& [demand, sign] : sign_assignment_to_demand) {
+                if (demand == sign) continue;
+
+                sign_assignment_to_demand_f_path
+                << demand << " "
+                << sign << std::endl;
+            }
+
+            // 拠点の割当の確認
+            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> anchor_assignment_to_demand = solver_ptr->net_sgflp.get_anchor_assignment_to_demand();
+            for (const auto& [demand, anchor] : anchor_assignment_to_demand) {
+                if (demand == anchor) continue;
+
+                anchor_assignment_to_demand_f_path
+                << demand << " "
+                << anchor << std::endl;
+            }
+
+            // 経路割当の確認
+            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> navigation_assignment = solver_ptr->net_sgflp.get_navigation_assignment();
+            for (const auto& [entity1, entity2] : navigation_assignment) {
+                if (entity1 == entity2) continue;
+
+                navigation_assignment_f_path
+                << entity1 << " "
+                << entity2 << std::endl;
+            }
+
+            // 拠点の最短経路木の確認
+            std::vector<std::pair<Net_2::vertex_descriptor, double>> anchor_shortest_path_tree =
+                solver_ptr->net_sgflp.get_anchor_shortest_path_tree();
+            for (size_t i {0}; i < anchor_shortest_path_tree.size(); ++i) {
+                anchor_shortest_path_tree_f_path 
+                << anchor_shortest_path_tree.at(i).first << " "
+                << anchor_shortest_path_tree.at(i).second << std::endl;
+            }      
+            
+            // 需要点ごとの経路の確認
+            std::unordered_map<Net_2::vertex_descriptor, std::tuple<size_t, double, std::vector<Net_2::vertex_descriptor>>> paths;
+            for (const auto& demand : solver_ptr->net_sgflp.get_demands()) {
+                std::pair<size_t, std::vector<Net_2::vertex_descriptor>> result_path = solver_ptr->net_sgflp.calculate_path(demand);
+                std::pair<size_t, double> result_cost = solver_ptr->net_sgflp.calculate_cost(demand);
+
+                if (result_path.first != result_cost.first) {
+                    throw std::runtime_error("Pattern mismatch for demand " + std::to_string(demand) + ": path length = " + std::to_string(result_path.first) + ", calculated cost = " + std::to_string(result_cost.second));
+                }
+                paths[demand] = std::make_tuple(result_path.first, result_cost.second, result_path.second);
+            }
+
+            for (const auto& [demand, path_info] : paths) {
+                paths_f_path << demand << " ";
+                
+                const auto& [type, cost, path] = path_info;
+                
+                paths_f_path << type << " ";
+                
+                paths_f_path
+                << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
+                << cost << " ";
+                
+                for (const auto& vertex : path) {
+                    paths_f_path << " " << vertex;
+                }
+                
+                paths_f_path << std::endl;
+            }
+
         }
 
         default:

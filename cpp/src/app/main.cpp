@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
         
             // 可視ノードの書き出し
             std::cout << "calculating visibility" << std::endl;
-            std::unordered_set<Net_2::vertex_descriptor> visible_vertices_2 = rdn_2.calculate_visible_vertices(p_2, 50000.0);
+            std::unordered_set<Net_2::vertex_descriptor> visible_vertices_2 = rdn_2.calculate_visible_vertices(p_2, {}, 50000.0);
         
             std::ofstream h_2("/home/workspace/data/visible_nodes_2.cout");
             for (const auto& v_2 : visible_vertices_2) {
@@ -308,7 +308,7 @@ int main(int argc, char *argv[]) {
             Point_2 inner_point(0.0, 0.0);
             size_t facility_num {16};
             size_t sign_num {0};
-            std::vector<Point_2> main_buildings {Point_2(0.0, 0.0)};
+            std::vector<Point_2> anchors {Point_2(0.0, 0.0)};
             net_wp.set_demands(inner_point);
             net_wp.initialize_facilities(facility_num);
         
@@ -394,7 +394,7 @@ int main(int argc, char *argv[]) {
                                                 Point_2(8333.333,25000.000), 
                                                 Point_2(41666.667,25000.000), 
                                                 Point_2(25000.000,41666.667)};
-            std::vector<Point_2> main_buildings {Point_2(2500.000,8333.333,0.000)};
+            std::vector<Point_2> anchors {Point_2(2500.000,8333.333,0.000)};
 
             net_fslp.set_demands(inner_point);
 
@@ -406,7 +406,7 @@ int main(int argc, char *argv[]) {
 
             net_fslp.initialize_facilities(facility_points);
             net_fslp.initialize_signs(sign_points);
-            net_fslp.initialize_main_buildings(main_buildings);
+            net_fslp.initialize_anchors(anchors);
 
             net_fslp.build_trees();
             net_fslp.build_assignments();
@@ -451,29 +451,29 @@ int main(int argc, char *argv[]) {
                 << (*(net_fslp.net_ptr))[sign]->x() << "," << (*(net_fslp.net_ptr))[sign]->y() << ",0.0" << " " << std::endl;
             }
 
-            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> facility_assignment_to_main_building = net_fslp.get_facility_assignment_to_main_building();
+            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> facility_assignment_to_anchor = net_fslp.get_facility_assignment_to_anchor();
             
-            std::ofstream file1d("/home/builder/workspace/data/facility_assignment_to_main_building.cout");
-            for (const auto& [facility, main_building] : facility_assignment_to_main_building) {
-                if (facility == main_building) continue;
+            std::ofstream file1d("/home/builder/workspace/data/facility_assignment_to_anchor.cout");
+            for (const auto& [facility, anchor] : facility_assignment_to_anchor) {
+                if (facility == anchor) continue;
 
                 file1d << std::scientific 
                 << std::setprecision(std::numeric_limits<double>::max_digits10) 
                 << "line "
                 << (*(net_fslp.net_ptr))[facility]->x() << "," << (*(net_fslp.net_ptr))[facility]->y() << ",0.0" << " "
-                << (*(net_fslp.net_ptr))[main_building]->x() << "," << (*(net_fslp.net_ptr))[main_building]->y() << ",0.0" << " " << std::endl;
+                << (*(net_fslp.net_ptr))[anchor]->x() << "," << (*(net_fslp.net_ptr))[anchor]->y() << ",0.0" << " " << std::endl;
             }
 
-            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> main_building_assignment_to_demand = net_fslp.get_main_building_assignment_to_demand();
+            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> anchor_assignment_to_demand = net_fslp.get_anchor_assignment_to_demand();
             
-            std::ofstream file1e("/home/builder/workspace/data/main_building_assignment_to_demand.cout");
-            for (const auto& [main_building, demand] : main_building_assignment_to_demand) {
-                if (main_building == demand) continue;
+            std::ofstream file1e("/home/builder/workspace/data/anchor_assignment_to_demand.cout");
+            for (const auto& [anchor, demand] : anchor_assignment_to_demand) {
+                if (anchor == demand) continue;
 
                 file1e << std::scientific 
                 << std::setprecision(std::numeric_limits<double>::max_digits10) 
                 << "line "
-                << (*(net_fslp.net_ptr))[main_building]->x() << "," << (*(net_fslp.net_ptr))[main_building]->y() << ",0.0" << " "
+                << (*(net_fslp.net_ptr))[anchor]->x() << "," << (*(net_fslp.net_ptr))[anchor]->y() << ",0.0" << " "
                 << (*(net_fslp.net_ptr))[demand]->x() << "," << (*(net_fslp.net_ptr))[demand]->y() << ",0.0" << " " << std::endl;
             }
 
@@ -518,13 +518,13 @@ int main(int argc, char *argv[]) {
             }
 
 
-            std::vector<std::pair<Net_2::vertex_descriptor, double>> main_building_shortest_path_tree = net_fslp.get_main_building_shortest_path_tree();
+            std::vector<std::pair<Net_2::vertex_descriptor, double>> anchor_shortest_path_tree = net_fslp.get_anchor_shortest_path_tree();
             
-            std::ofstream file4("/home/builder/workspace/data/main_building_shortest_path_tree.cout");
-            for (size_t i {0}; i < main_building_shortest_path_tree.size(); ++i) {
+            std::ofstream file4("/home/builder/workspace/data/anchor_shortest_path_tree.cout");
+            for (size_t i {0}; i < anchor_shortest_path_tree.size(); ++i) {
                 file4 << std::scientific 
                 << std::setprecision(std::numeric_limits<double>::max_digits10) 
-                << i << " " << main_building_shortest_path_tree.at(i).first << " " << main_building_shortest_path_tree.at(i).second << std::endl;
+                << i << " " << anchor_shortest_path_tree.at(i).first << " " << anchor_shortest_path_tree.at(i).second << std::endl;
             }
 
 
@@ -581,14 +581,14 @@ int main(int argc, char *argv[]) {
             Point_2 inner_point(25000.0, 25000.0);
             size_t facility_num {9};
             size_t sign_num {12};
-            std::vector<Point_2> main_buildings {Point_2(25000.0, 25000.0)};
+            std::vector<Point_2> anchors {Point_2(25000.0, 25000.0)};
             double visible_length = std::sqrt(2)*10000/3;
             
             net_fslp.set_visible_length(visible_length);
             net_fslp.set_demands(inner_point);
             net_fslp.initialize_facilities(facility_num);
             net_fslp.initialize_signs(sign_num);
-            net_fslp.initialize_main_buildings(main_buildings);
+            net_fslp.initialize_anchors(anchors);
 
             Facilities_Signs_Pair initial_solution = std::make_pair(net_fslp.get_facilities(), net_fslp.get_signs());
 
@@ -623,9 +623,9 @@ int main(int argc, char *argv[]) {
                 std::cout << sign_node.x() << "," << sign_node.y() << ",0.0" << std::endl;
             }
             std::cout << "Main Building" << std::endl;
-            for (const auto& main_building : solver_ptr->net_fslp.get_main_buildings()) {
-                Node_2 main_building_node = *((*(solver_ptr->net_fslp.net_ptr))[main_building]);
-                std::cout << main_building_node.x() << "," << main_building_node.y() << ",0.0" << std::endl;
+            for (const auto& anchor : solver_ptr->net_fslp.get_anchors()) {
+                Node_2 anchor_node = *((*(solver_ptr->net_fslp.net_ptr))[anchor]);
+                std::cout << anchor_node.x() << "," << anchor_node.y() << ",0.0" << std::endl;
             }
 
             Facilities_Signs_Pair best_solution = sa.solve(initial_solution, show_progress, logging, &log_file);
@@ -682,7 +682,7 @@ int main(int argc, char *argv[]) {
             std::iota(sign_nums.begin(), sign_nums.end(), 0);
 
             Point_2 inner_point(8333.333, 8333.333);
-            std::vector<Point_2> main_buildings {inner_point};
+            std::vector<Point_2> anchors {inner_point};
             double visible_length = std::sqrt(2)*10000/3;
 
             double init_temperature = 1000.0;     // 初期温度
@@ -736,7 +736,7 @@ int main(int argc, char *argv[]) {
                         net_fslp.set_demands(inner_point);
                         net_fslp.initialize_facilities(facility_num);
                         net_fslp.initialize_signs(sign_num);
-                        net_fslp.initialize_main_buildings(main_buildings);
+                        net_fslp.initialize_anchors(anchors);
 
                         Facilities_Signs_Pair initial_solution = std::make_pair(net_fslp.get_facilities(), net_fslp.get_signs());
 
@@ -779,11 +779,11 @@ int main(int argc, char *argv[]) {
                             << sign_node.x() << "," << sign_node.y() << ",0.0" << std::endl;
                         }
                         result_file << "main building: " << std::endl;
-                        for (const auto& main_building : solver_ptr->net_fslp.get_main_buildings()) {
-                            Node_2 main_building_node = *((*(solver_ptr->net_fslp.net_ptr))[main_building]);
+                        for (const auto& anchor : solver_ptr->net_fslp.get_anchors()) {
+                            Node_2 anchor_node = *((*(solver_ptr->net_fslp.net_ptr))[anchor]);
                             result_file << std::scientific 
                             << std::setprecision(std::numeric_limits<double>::max_digits10) 
-                            << main_building_node.x() << "," << main_building_node.y() << ",0.0" << std::endl;
+                            << anchor_node.x() << "," << anchor_node.y() << ",0.0" << std::endl;
                         }
                         
                         result_file << std::endl;
@@ -1873,7 +1873,7 @@ int main(int argc, char *argv[]) {
                     tmp_net_fslp.set_demands(inner_point);
                     tmp_net_fslp.initialize_facilities(default_AED_points);
                     tmp_net_fslp.initialize_signs(0);
-                    tmp_net_fslp.initialize_main_buildings(base_points);
+                    tmp_net_fslp.initialize_anchors(base_points);
 
                     std::cout << "seed " 
                             << seed
@@ -1919,7 +1919,7 @@ int main(int argc, char *argv[]) {
 
                     write_nodes(solution_table, tmp_solver_ptr, solution_id, seed, -1, "facility", default_solution.first);
                     write_nodes(solution_table, tmp_solver_ptr, solution_id, seed, -1, "sign", default_solution.second);
-                    write_nodes(solution_table, tmp_solver_ptr, solution_id, seed, -1, "main_building", tmp_solver_ptr->net_fslp.get_main_buildings());
+                    write_nodes(solution_table, tmp_solver_ptr, solution_id, seed, -1, "anchor", tmp_solver_ptr->net_fslp.get_anchors());
 
                     std::ofstream tmp_distribution_table(output_data_folder + 
                                                     "distribution_" + 
@@ -1972,7 +1972,7 @@ int main(int argc, char *argv[]) {
                             net_fslp.set_demands(inner_point);
                             net_fslp.initialize_facilities(AED_num);
                             net_fslp.initialize_signs(0);
-                            net_fslp.initialize_main_buildings(base_points);
+                            net_fslp.initialize_anchors(base_points);
 
                             // 最初の試行は現状のAED配置を含める
                             if (AED_num >= default_AED_points.size() && trial == 0) {
@@ -2044,7 +2044,7 @@ int main(int argc, char *argv[]) {
 
                             write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "facility", best_solution.first);
                             write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "sign", best_solution.second);
-                            write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "main_building", solver_ptr->net_fslp.get_main_buildings());
+                            write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "anchor", solver_ptr->net_fslp.get_anchors());
 
                             std::ofstream distribution_table(output_data_folder + 
                                                             "distribution_" + 
@@ -2189,7 +2189,7 @@ int main(int argc, char *argv[]) {
             net_fslp.set_demands(inner_point);
             net_fslp.initialize_facilities(default_AED_points);
             net_fslp.initialize_signs(0);
-            net_fslp.initialize_main_buildings(base_points);
+            net_fslp.initialize_anchors(base_points);
             
             // net_fslp.build_trees();
             // net_fslp.build_assignments();
@@ -2210,8 +2210,8 @@ int main(int argc, char *argv[]) {
             std::ofstream facility_assignment_to_demand_f_path("/home/workspace/data/simulation_UTKomaba2/facility_assignment_to_demand.cout");
             std::ofstream sign_assignment_to_demand_f_path("/home/workspace/data/simulation_UTKomaba2/sign_assignment_to_demand.cout");
             std::ofstream facility_assignment_to_sign_f_path("/home/workspace/data/simulation_UTKomaba2/facility_assignment_to_sign.cout");
-            std::ofstream facility_assignment_to_main_building_f_path("/home/workspace/data/simulation_UTKomaba2/facility_assignment_to_main_building.cout");
-            std::ofstream main_building_assignment_to_demand_f_path("/home/workspace/data/simulation_UTKomaba2/main_building_assignment_to_demand.cout");
+            std::ofstream facility_assignment_to_anchor_f_path("/home/workspace/data/simulation_UTKomaba2/facility_assignment_to_anchor.cout");
+            std::ofstream anchor_assignment_to_demand_f_path("/home/workspace/data/simulation_UTKomaba2/anchor_assignment_to_demand.cout");
 
             // ネットワークの書き出し
             rdn.write_nodes(node_f_path);
@@ -2320,46 +2320,46 @@ int main(int argc, char *argv[]) {
             }
 
             // 施設の基点割当
-            // std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> facility_assignment_to_main_building = net_fslp.get_facility_assignment_to_main_building();
-            // for (const auto& [facility, main_building] : facility_assignment_to_main_building) {
-            //     if (facility == main_building) continue;
+            // std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> facility_assignment_to_anchor = net_fslp.get_facility_assignment_to_anchor();
+            // for (const auto& [facility, anchor] : facility_assignment_to_anchor) {
+            //     if (facility == anchor) continue;
                 
-            //     facility_assignment_to_main_building_f_path << std::scientific 
+            //     facility_assignment_to_anchor_f_path << std::scientific 
             //     << std::setprecision(std::numeric_limits<double>::max_digits10) 
             //     << "line "
             //     << (*(net_fslp.net_ptr))[facility]->x() << "," << (*(net_fslp.net_ptr))[facility]->y() << ",0.0" << " "
-            //     << (*(net_fslp.net_ptr))[main_building]->x() << "," << (*(net_fslp.net_ptr))[main_building]->y() << ",0.0" << " " << std::endl;
+            //     << (*(net_fslp.net_ptr))[anchor]->x() << "," << (*(net_fslp.net_ptr))[anchor]->y() << ",0.0" << " " << std::endl;
             // }
-            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> facility_assignment_to_main_building = solver_ptr->net_fslp.get_facility_assignment_to_main_building();
-            for (const auto& [facility, main_building] : facility_assignment_to_main_building) {
-                if (facility == main_building) continue;
+            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> facility_assignment_to_anchor = solver_ptr->net_fslp.get_facility_assignment_to_anchor();
+            for (const auto& [facility, anchor] : facility_assignment_to_anchor) {
+                if (facility == anchor) continue;
                 
-                facility_assignment_to_main_building_f_path << std::scientific 
+                facility_assignment_to_anchor_f_path << std::scientific 
                 << std::setprecision(std::numeric_limits<double>::max_digits10) 
                 << "line "
                 << (*(solver_ptr->net_fslp.net_ptr))[facility]->x() << "," << (*(solver_ptr->net_fslp.net_ptr))[facility]->y() << ",0.0" << " "
-                << (*(solver_ptr->net_fslp.net_ptr))[main_building]->x() << "," << (*(solver_ptr->net_fslp.net_ptr))[main_building]->y() << ",0.0" << " " << std::endl;
+                << (*(solver_ptr->net_fslp.net_ptr))[anchor]->x() << "," << (*(solver_ptr->net_fslp.net_ptr))[anchor]->y() << ",0.0" << " " << std::endl;
             }
 
             // 需要点の基点割当
-            // std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> main_building_assignment_to_demand = net_fslp.get_main_building_assignment_to_demand();
-            // for (const auto& [main_building, demand] : main_building_assignment_to_demand) {
-            //     if (main_building == demand) continue;
+            // std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> anchor_assignment_to_demand = net_fslp.get_anchor_assignment_to_demand();
+            // for (const auto& [anchor, demand] : anchor_assignment_to_demand) {
+            //     if (anchor == demand) continue;
 
-            //     main_building_assignment_to_demand_f_path << std::scientific 
+            //     anchor_assignment_to_demand_f_path << std::scientific 
             //     << std::setprecision(std::numeric_limits<double>::max_digits10) 
             //     << "line "
-            //     << (*(net_fslp.net_ptr))[main_building]->x() << "," << (*(net_fslp.net_ptr))[main_building]->y() << ",0.0" << " "
+            //     << (*(net_fslp.net_ptr))[anchor]->x() << "," << (*(net_fslp.net_ptr))[anchor]->y() << ",0.0" << " "
             //     << (*(net_fslp.net_ptr))[demand]->x() << "," << (*(net_fslp.net_ptr))[demand]->y() << ",0.0" << " " << std::endl;
             // }
-            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> main_building_assignment_to_demand = solver_ptr->net_fslp.get_main_building_assignment_to_demand();
-            for (const auto& [main_building, demand] : main_building_assignment_to_demand) {
-                if (main_building == demand) continue;
+            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> anchor_assignment_to_demand = solver_ptr->net_fslp.get_anchor_assignment_to_demand();
+            for (const auto& [anchor, demand] : anchor_assignment_to_demand) {
+                if (anchor == demand) continue;
 
-                main_building_assignment_to_demand_f_path << std::scientific 
+                anchor_assignment_to_demand_f_path << std::scientific 
                 << std::setprecision(std::numeric_limits<double>::max_digits10) 
                 << "line "
-                << (*(solver_ptr->net_fslp.net_ptr))[main_building]->x() << "," << (*(solver_ptr->net_fslp.net_ptr))[main_building]->y() << ",0.0" << " "
+                << (*(solver_ptr->net_fslp.net_ptr))[anchor]->x() << "," << (*(solver_ptr->net_fslp.net_ptr))[anchor]->y() << ",0.0" << " "
                 << (*(solver_ptr->net_fslp.net_ptr))[demand]->x() << "," << (*(solver_ptr->net_fslp.net_ptr))[demand]->y() << ",0.0" << " " << std::endl;
             }
 
@@ -2414,20 +2414,20 @@ int main(int argc, char *argv[]) {
             // }
 
             // 基点の最短経路木の書き出し
-            // std::vector<std::pair<Net_2::vertex_descriptor, double>> main_building_shortest_path_tree = net_fslp.get_main_building_shortest_path_tree();
-            // std::ofstream k("/home/workspace/data/simulation_UTKomaba2/main_building_shortest_path_tree.cout");
-            // for (size_t i {0}; i < main_building_shortest_path_tree.size(); ++i) {
+            // std::vector<std::pair<Net_2::vertex_descriptor, double>> anchor_shortest_path_tree = net_fslp.get_anchor_shortest_path_tree();
+            // std::ofstream k("/home/workspace/data/simulation_UTKomaba2/anchor_shortest_path_tree.cout");
+            // for (size_t i {0}; i < anchor_shortest_path_tree.size(); ++i) {
             //     k << std::scientific 
             //     << std::setprecision(std::numeric_limits<double>::max_digits10) 
-            //     << i << " " << main_building_shortest_path_tree.at(i).first << " " << main_building_shortest_path_tree.at(i).second << std::endl;
+            //     << i << " " << anchor_shortest_path_tree.at(i).first << " " << anchor_shortest_path_tree.at(i).second << std::endl;
             // }
             // k.close();
-            std::vector<std::pair<Net_2::vertex_descriptor, double>> main_building_shortest_path_tree = solver_ptr->net_fslp.get_main_building_shortest_path_tree();
-            std::ofstream k("/home/workspace/data/simulation_UTKomaba2/main_building_shortest_path_tree.cout");
-            for (size_t i {0}; i < main_building_shortest_path_tree.size(); ++i) {
+            std::vector<std::pair<Net_2::vertex_descriptor, double>> anchor_shortest_path_tree = solver_ptr->net_fslp.get_anchor_shortest_path_tree();
+            std::ofstream k("/home/workspace/data/simulation_UTKomaba2/anchor_shortest_path_tree.cout");
+            for (size_t i {0}; i < anchor_shortest_path_tree.size(); ++i) {
                 k << std::scientific 
                 << std::setprecision(std::numeric_limits<double>::max_digits10) 
-                << i << " " << main_building_shortest_path_tree.at(i).first << " " << main_building_shortest_path_tree.at(i).second << std::endl;
+                << i << " " << anchor_shortest_path_tree.at(i).first << " " << anchor_shortest_path_tree.at(i).second << std::endl;
             }
             k.close();
 

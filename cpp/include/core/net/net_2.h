@@ -266,6 +266,19 @@ class Net_2 : public Graph_2 {
             const std::vector<Net_2::vertex_descriptor> prohibited_vertices={}
         ) const;
         /*************************************************
+         * @brief 最短経路木から最短経路を復元する
+         *
+         * @param source
+         * @param target
+         * @param spt calculate_shortest_path_tree() の戻り値
+         * @return std::deque<std::pair<Net_2::vertex_descriptor, double>>
+         *************************************************/
+        std::deque<std::pair<Net_2::vertex_descriptor, double>> calculate_shortest_path(
+            const Net_2::vertex_descriptor source,
+            const Net_2::vertex_descriptor target,
+            const std::vector<std::pair<Net_2::vertex_descriptor, double>>& spt
+        ) const;
+        /*************************************************
          * @brief 経路の長さを計算する
          * 
          * @param path 
@@ -339,6 +352,7 @@ class Net_2 : public Graph_2 {
          *************************************************/
         std::unordered_set<Net_2::vertex_descriptor> calculate_visible_vertices(
             Point_2 p, 
+            const std::vector<Net_2::vertex_descriptor> prohibited_vertices={}, 
             const double length_constraint=std::numeric_limits<double>::max()
         ) const;
         /*************************************************

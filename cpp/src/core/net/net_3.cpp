@@ -369,6 +369,67 @@ std::deque<std::pair<Net_3::vertex_descriptor, double>> Net_3::calculate_shortes
 
 }
 
+std::deque<std::pair<Net_3::vertex_descriptor, double>> Net_3::calculate_shortest_path(
+    const Net_3::vertex_descriptor source,
+    const Net_3::vertex_descriptor target,
+    const std::vector<std::pair<Net_3::vertex_descriptor, double>>& spt
+) const {
+    std::deque<std::pair<Net_3::vertex_descriptor, double>> path;
+
+    if (source >= spt.size() || target >= spt.size()) {
+        throw std::runtime_error(
+            "Source or target vertex is out of bounds.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    if (source == target) {
+        path.push_front(std::make_pair(source, 0.0));
+        return path;
+    }
+
+    if (spt.at(target).second == std::numeric_limits<double>::infinity()) {
+        throw std::runtime_error(
+            "Target vertex is unreachable.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    std::unordered_set<Net_3::vertex_descriptor> visited;
+    for (Net_3::vertex_descriptor v = target; ; v = spt.at(v).first) {
+        if (v >= spt.size()) {
+            throw std::runtime_error(
+                "Vertex out of bounds.\n"
+                "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+            );
+        }
+
+        if (!visited.insert(v).second) {
+            // ループが発生した場合は無効な最短経路木
+            throw std::runtime_error(
+                "Loop detected in shortest path tree.\n"
+                "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+            );
+        }
+
+        path.push_front(std::make_pair(v, spt.at(v).second));
+
+        if (v == source) {
+            break;
+        }
+
+        if (spt.at(v).first == v || spt.at(v).first == Net_3::null_vertex()) {
+            // source に到達する前に閉路/孤立へ入った
+            throw std::runtime_error(
+                "Invalid shortest path tree: reached a loop or isolated vertex before reaching the source.\n"
+                "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+            );
+        }
+    }
+
+    return path;
+}
+
 double Net_3::calculate_path_length(
     const std::deque<std::pair<Net_3::vertex_descriptor, double>>& path,
     const size_t mode, 
@@ -462,6 +523,7 @@ void Net_3::search_visible_vertices(
             // 見通せる
             if (spt_without_obstacles.at(child).second <= length_constraint) {
                 // 認識できる距離にある
+                //!バグ 透過性の重みを考慮していない
                 visible_vertices.insert(child);
                 next_parents_vec.push_back(child);
             } else {
@@ -601,13 +663,18 @@ void Net_3::search_reachable_vertices(
 //** Planning Method **//
 std::unordered_set<Net_3::vertex_descriptor> Net_3::calculate_visible_vertices(
     Point_3 p, 
+    const std::vector<Net_3::vertex_descriptor> prohibited_vertices, 
     const double length_constraint) const 
 {
     Net_3::vertex_descriptor vantage_node = this->find_nearest_node(p);
 
     std::vector<std::pair<Net_3::vertex_descriptor, double>> spt_without_obstacles;
 
-    spt_without_obstacles = this->calculate_shortest_path_tree(vantage_node, Net_3::MODE_VISIBILITY, false, true);
+    spt_without_obstacles = this->calculate_shortest_path_tree(vantage_node, 
+                                                               Net_3::MODE_VISIBILITY, 
+                                                               false, 
+                                                               false,
+                                                               prohibited_vertices);
 
     // 最短経路木を反転する
     // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする

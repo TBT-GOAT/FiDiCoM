@@ -140,6 +140,13 @@ class Net_WP {
 
         //** Initialization Methods **//
         /*************************************************
+         * @brief 最寄りの需要点を探索する
+         * 
+         * @param point 
+         * @return Net_2::vertex_descriptor 
+         *************************************************/
+        Net_2::vertex_descriptor search_nearest_demand(const Point_2 point) const;
+        /*************************************************
          * @brief サービス供給点を初期化する
          * 
          * @param facility_points 

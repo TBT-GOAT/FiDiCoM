@@ -2542,7 +2542,7 @@ int main(int argc, char *argv[]) {
 
             // ランダムドロネー網の初期化
             std::cout << "initializing" << std::endl;
-            rDn_2 rdn(10000, domain);
+            rDn_2 rdn(50000, domain);
             rdn.initialize();
             rdn.disconnect_edges(obstacles);
 
@@ -2565,105 +2565,172 @@ int main(int argc, char *argv[]) {
 
             // 保存先の設定
             std::string output_data_folder = data_folder_path + "/output/";
-            
             // ディレクトリがなければ作る
             if (!std::filesystem::exists(output_data_folder)) {
                 std::filesystem::create_directories(output_data_folder);
             }
-            
-            std::string node_f_path {output_data_folder + "nodes.cout"};
-            std::string edge_f_path {output_data_folder + "edges.cout"};
-            std::string adjacency_f_path {output_data_folder + "adjacency.cout"};
-            std::ofstream facility_assignment_to_demand_f_path(output_data_folder + "facility_assignment_to_demand.cout");
-            std::ofstream sign_assignment_to_demand_f_path(output_data_folder + "sign_assignment_to_demand.cout");
-            std::ofstream anchor_assignment_to_demand_f_path(output_data_folder + "anchor_assignment_to_demand.cout");
-            std::ofstream navigation_assignment_f_path(output_data_folder + "navigation_assignment.cout");
-            std::ofstream anchor_shortest_path_tree_f_path(output_data_folder + "anchor_shortest_path_tree.cout");
-            std::ofstream paths_f_path(output_data_folder + "paths.cout");
 
-            // ネットワークの書き出し
-            rdn.write_nodes(node_f_path);
-            rdn.write_edges(edge_f_path);
-            rdn.write_adjacency(adjacency_f_path, Net_2::MODE_ROUTE);
-            
-            // サービス供給点の割当の確認
-            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> facility_assignment_to_demand = solver_ptr->net_sgflp.get_facility_assignment_to_demand();
-            for (const auto& [demand, faility] : facility_assignment_to_demand) {
-                if (demand == faility) continue;
-
-                facility_assignment_to_demand_f_path
-                << demand << " "
-                << faility << std::endl;
-            }
-
-            // サインの割当の確認
-            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> sign_assignment_to_demand = solver_ptr->net_sgflp.get_sign_assignment_to_demand();
-            for (const auto& [demand, sign] : sign_assignment_to_demand) {
-                if (demand == sign) continue;
-
-                sign_assignment_to_demand_f_path
-                << demand << " "
-                << sign << std::endl;
-            }
-
-            // 拠点の割当の確認
-            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> anchor_assignment_to_demand = solver_ptr->net_sgflp.get_anchor_assignment_to_demand();
-            for (const auto& [demand, anchor] : anchor_assignment_to_demand) {
-                if (demand == anchor) continue;
-
-                anchor_assignment_to_demand_f_path
-                << demand << " "
-                << anchor << std::endl;
-            }
-
-            // 経路割当の確認
-            std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> navigation_assignment = solver_ptr->net_sgflp.get_navigation_assignment();
-            for (const auto& [entity1, entity2] : navigation_assignment) {
-                if (entity1 == entity2) continue;
-
-                navigation_assignment_f_path
-                << entity1 << " "
-                << entity2 << std::endl;
-            }
-
-            // 拠点の最短経路木の確認
-            std::vector<std::pair<Net_2::vertex_descriptor, double>> anchor_shortest_path_tree =
-                solver_ptr->net_sgflp.get_anchor_shortest_path_tree();
-            for (size_t i {0}; i < anchor_shortest_path_tree.size(); ++i) {
-                anchor_shortest_path_tree_f_path 
-                << anchor_shortest_path_tree.at(i).first << " "
-                << anchor_shortest_path_tree.at(i).second << std::endl;
-            }      
-            
-            // 需要点ごとの経路の確認
-            std::unordered_map<Net_2::vertex_descriptor, std::tuple<size_t, double, std::vector<Net_2::vertex_descriptor>>> paths;
-            for (const auto& demand : solver_ptr->net_sgflp.get_demands()) {
-                std::pair<size_t, std::vector<Net_2::vertex_descriptor>> result_path = solver_ptr->net_sgflp.calculate_path(demand);
-                std::pair<size_t, double> result_cost = solver_ptr->net_sgflp.calculate_cost(demand);
-
-                if (result_path.first != result_cost.first) {
-                    throw std::runtime_error("Pattern mismatch for demand " + std::to_string(demand) + ": path length = " + std::to_string(result_path.first) + ", calculated cost = " + std::to_string(result_cost.second));
-                }
-                paths[demand] = std::make_tuple(result_path.first, result_cost.second, result_path.second);
-            }
-
-            for (const auto& [demand, path_info] : paths) {
-                paths_f_path << demand << " ";
+            size_t case_num {0};
+            auto case_folder = [&]() {return output_data_folder + "case_" + std::to_string(case_num) + "/";};
+            auto write_test_result = [&]() {
                 
-                const auto& [type, cost, path] = path_info;
-                
-                paths_f_path << type << " ";
-                
-                paths_f_path
-                << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
-                << cost << " ";
-                
-                for (const auto& vertex : path) {
-                    paths_f_path << " " << vertex;
+                // ディレクトリがなければ作る
+                if (!std::filesystem::exists(case_folder())) {
+                    std::filesystem::create_directories(case_folder());
                 }
                 
-                paths_f_path << std::endl;
-            }
+                std::string node_f_path {case_folder() + "nodes.cout"};
+                std::string edge_f_path {case_folder() + "edges.cout"};
+                std::string adjacency_f_path {case_folder() + "adjacency.cout"};
+                std::ofstream facilities_f(case_folder() + "facilities.cout");
+                std::ofstream signs_f(case_folder() + "signs.cout");
+                std::ofstream anchors_f(case_folder() + "anchors.cout");
+                std::ofstream facility_assignment_to_demand_f(case_folder() + "facility_assignment_to_demand.cout");
+                std::ofstream sign_assignment_to_demand_f(case_folder() + "sign_assignment_to_demand.cout");
+                std::ofstream anchor_assignment_to_demand_f(case_folder() + "anchor_assignment_to_demand.cout");
+                std::ofstream navigation_assignment_f(case_folder() + "navigation_assignment.cout");
+                std::ofstream anchor_shortest_path_tree_f(case_folder() + "anchor_shortest_path_tree.cout");
+                std::ofstream paths_f(case_folder() + "paths.cout");
+
+                // ネットワークの書き出し
+                rdn.write_nodes(node_f_path);
+                rdn.write_edges(edge_f_path);
+                rdn.write_adjacency(adjacency_f_path, Net_2::MODE_ROUTE);
+
+                // エンティティの書き出し
+                for (const auto& facility : solver_ptr->net_sgflp.get_facilities()) {
+                    facilities_f 
+                    << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
+                    << (*(solver_ptr->net_sgflp.net_ptr))[facility]->x() << "," << (*(solver_ptr->net_sgflp.net_ptr))[facility]->y() << ",0.0" << std::endl;
+                }
+                for (const auto& sign : solver_ptr->net_sgflp.get_signs()) {
+                    signs_f 
+                    << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
+                    << (*(solver_ptr->net_sgflp.net_ptr))[sign]->x() << "," << (*(solver_ptr->net_sgflp.net_ptr))[sign]->y() << ",0.0" << std::endl;
+                }
+                for (const auto& anchor : solver_ptr->net_sgflp.get_anchors()) {
+                    anchors_f 
+                    << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
+                    << (*(solver_ptr->net_sgflp.net_ptr))[anchor]->x() << "," << (*(solver_ptr->net_sgflp.net_ptr))[anchor]->y() << ",0.0" << std::endl;
+                }
+                
+                // サービス供給点の割当の確認
+                std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> facility_assignment_to_demand = solver_ptr->net_sgflp.get_facility_assignment_to_demand();
+                for (const auto& [demand, faility] : facility_assignment_to_demand) {
+                    if (demand == faility) continue;
+
+                    facility_assignment_to_demand_f
+                    << demand << " "
+                    << faility << std::endl;
+                }
+
+                // サインの割当の確認
+                std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> sign_assignment_to_demand = solver_ptr->net_sgflp.get_sign_assignment_to_demand();
+                for (const auto& [demand, sign] : sign_assignment_to_demand) {
+                    if (demand == sign) continue;
+
+                    sign_assignment_to_demand_f
+                    << demand << " "
+                    << sign << std::endl;
+                }
+
+                // 拠点の割当の確認
+                std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> anchor_assignment_to_demand = solver_ptr->net_sgflp.get_anchor_assignment_to_demand();
+                for (const auto& [demand, anchor] : anchor_assignment_to_demand) {
+                    if (demand == anchor) continue;
+
+                    anchor_assignment_to_demand_f
+                    << demand << " "
+                    << anchor << std::endl;
+                }
+
+                // 経路割当の確認
+                std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> navigation_assignment = solver_ptr->net_sgflp.get_navigation_assignment();
+                for (const auto& [entity1, entity2] : navigation_assignment) {
+                    if (entity1 == entity2) continue;
+
+                    navigation_assignment_f
+                    << entity1 << " "
+                    << entity2 << std::endl;
+                }
+
+                // 拠点の最短経路木の確認
+                std::vector<std::pair<Net_2::vertex_descriptor, double>> anchor_shortest_path_tree =
+                    solver_ptr->net_sgflp.get_anchor_shortest_path_tree();
+                for (size_t i {0}; i < anchor_shortest_path_tree.size(); ++i) {
+                    anchor_shortest_path_tree_f
+                    << anchor_shortest_path_tree.at(i).first << " "
+                    << anchor_shortest_path_tree.at(i).second << std::endl;
+                }      
+                
+                // 需要点ごとの経路の確認
+                std::unordered_map<Net_2::vertex_descriptor, std::tuple<size_t, double, std::vector<Net_2::vertex_descriptor>>> paths;
+                for (const auto& demand : solver_ptr->net_sgflp.get_demands()) {
+                    std::pair<size_t, std::vector<Net_2::vertex_descriptor>> result_path = solver_ptr->net_sgflp.calculate_path(demand);
+                    std::pair<size_t, double> result_cost = solver_ptr->net_sgflp.calculate_cost(demand);
+
+                    if (result_path.first != result_cost.first) {
+                        throw std::runtime_error("Pattern mismatch for demand " + std::to_string(demand) + ": path length = " + std::to_string(result_path.first) + ", calculated cost = " + std::to_string(result_cost.second));
+                    }
+                    paths[demand] = std::make_tuple(result_path.first, result_cost.second, result_path.second);
+                }
+
+                for (const auto& [demand, path_info] : paths) {
+                    paths_f << demand << " ";
+                    
+                    const auto& [type, cost, path] = path_info;
+                    
+                    paths_f << type << " ";
+                    
+                    paths_f
+                    << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
+                    << cost << " ";
+                    
+                    for (const auto& vertex : path) {
+                        paths_f << " " << vertex;
+                    }
+                    
+                    paths_f << std::endl;
+                }
+            };
+            
+            // 初期解の書き出し
+            write_test_result();
+
+            // 解の改善
+            //* 焼きなまし法のハイパーパラメータの設定
+            double init_temperature = 1000.0;     // 初期温度
+            double cooling_rate = 0.999;          // 冷却率
+            double max_iter = 100;               // 最大反復回数
+
+            //* 出力の設定
+            bool show_progress = true;
+            bool logging = true;
+
+            //* 焼きなまし法の実行
+            Simulated_Annealing<std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>> sa(
+                init_temperature,    
+                cooling_rate,      
+                max_iter,       
+                [solver_ptr, optim_mode](const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> solution){
+                    return solver_ptr->evaluate_function(solution, optim_mode);
+                }, 
+                [solver_ptr](const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>& current_solution){
+                    return solver_ptr->generate_neighbor_function_with_jump(current_solution);
+                }
+            );
+
+            // 求解
+            std::cout << "optimizing" << std::endl;
+            std::string log_file_name = output_data_folder + "log.cout";
+            std::ofstream log_file(log_file_name);
+
+            Facilities_Signs_Pair initial_solution = std::make_pair(net_sgflp.get_facilities(), net_sgflp.get_signs());
+            Facilities_Signs_Pair best_solution = sa.solve(initial_solution, show_progress, logging, &log_file);
+
+            // 最適解の書き出し
+            case_num++;
+            write_test_result();
 
         }
 

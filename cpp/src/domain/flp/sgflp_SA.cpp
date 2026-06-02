@@ -1,4 +1,4 @@
-
+//TODO 内部状態を変えない
 
 // include header
 #include "domain/flp/sgflp_SA.h"

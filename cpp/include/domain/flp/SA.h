@@ -49,7 +49,9 @@ class Simulated_Annealing {
         size_t max_iteration;       // 最大反復回数
 
         std::function<double(const Solution&)> evaluate_function;               // 評価関数
-        std::function<Solution(const Solution&)> generate_neighbor_function;    // 近傍生成関数
+        std::function<Solution(const Solution&)> generate_neighbor_function;    // 近傍解生成関数
+                                                                                //!目的関数の評価、近傍解生成は、解の生成と切り離して実装するべき。
+                                                                                //!内部状態を変更するような副作用を持つ実装は避けるべき。
 
         /*************************************************
          * @brief 解の遷移を受け入れるかどうかの判定
@@ -139,14 +141,26 @@ class Simulated_Annealing {
 
                 // 最適解の更新
                 if (next_cost < best_cost) {
+                    std::cout
+                    << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10) 
+                    << "New best solution found! Cost improved from " << best_cost << " to " << next_cost << "." << std::endl;
+
                     best_solution = next_solution;
                     best_cost = next_cost;
                 }
 
                 // 解の更新
                 if (should_accept(current_cost, next_cost, temperature)) {
+                    std::cout 
+                    << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
+                    << "Transition accepted. Cost changed from " << current_cost << " to " << next_cost << "." << std::endl;
+
                     current_solution = next_solution;
                     current_cost = next_cost;
+                } else {
+                    std::cout 
+                    << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
+                    << "Transition rejected. Cost remains at " << current_cost << "." << std::endl;
                 }
                 
                 temperature *= this->cooling_rate;
@@ -158,7 +172,9 @@ class Simulated_Annealing {
                 }
 
                 if (logging) {
-                    *log_file_ptr << i << " " << temperature << " " << best_cost << " " << duration << std::endl;
+                    *log_file_ptr 
+                    << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
+                    << i << " " << temperature << " " << best_cost << " " << duration << std::endl;
                 }
             
             }

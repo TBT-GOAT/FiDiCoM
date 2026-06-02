@@ -766,6 +766,7 @@ void Net_SGFLP::initialize_visibility_distance_matrix() {
 }
 
 void Net_SGFLP::initialize_navigation_assignment() {
+    std::cout << "Initializing navigation assignment..." << std::endl;
     this->navigation_assignment.clear();
 
     this->initialize_entity_groups();
@@ -1136,17 +1137,18 @@ std::pair<size_t, size_t> Net_SGFLP::update_entity_groups() {
    
     // 更新の整合性チェック
     if (update_info.empty()) {
-        throw std::runtime_error(
-            "No entity has been updated.\n"
-            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
-        );
+        std::cout << "Warning: No entity has been updated." << std::endl;
+        return std::make_pair(-1, -1);
     }
 
     if (update_info.size() > 1) {
-        throw std::runtime_error(
-            "Multiple entities have been updated. Only one entity can be updated at a time.\n"
-            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
-        );
+        std::cout << "Warning: Multiple entities have been updated. Rebuilding navigation assignment from scratch." << std::endl;
+        for (const auto& info : update_info) {
+            Net_2::vertex_descriptor updated_vertex = updated_entity_groups[info.first][info.second];
+            std::cout << "Updated entity group index: " << info.first << ", vertex index: " << info.second << ", vertex: " << updated_vertex << std::endl;
+        }
+        this->entity_groups = updated_entity_groups;
+        return std::make_pair(-2, -2);
     }
 
     // エンティティの更新
@@ -1160,6 +1162,16 @@ std::pair<size_t, size_t> Net_SGFLP::update_entity_groups() {
 void Net_SGFLP::update_visibility_distance_matrix() {
     // 更新されたエンティティを同定
     std::pair<size_t, size_t> update_info = update_entity_groups();
+    if (update_info.first == -1 && update_info.second == -1) {
+        // 更新されたエンティティがない場合は何もしない
+        return;
+    }
+    if (update_info.first == -2 && update_info.second == -2) {
+        // 複数エンティティが更新された場合は行列を全再構築する
+        this->initialize_entity_groups();
+        this->initialize_visibility_distance_matrix();
+        return;
+    }
 
     // 更新されたエンティティからの可視距離を計算
     Net_2::vertex_descriptor entity = this->entity_groups[update_info.first][update_info.second];
@@ -1232,11 +1244,10 @@ void Net_SGFLP::update_visibility_distance_matrix() {
 }
 
 void Net_SGFLP::update_navigation_assignment() {
+    // std::cout << "Updating navigation assignment..." << std::endl;
     this->navigation_assignment.clear();
 
-    this->update_entity_groups();
     this->update_visibility_distance_matrix();
-
     this->assign_navigation();
 
 }

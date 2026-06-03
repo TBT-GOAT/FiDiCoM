@@ -154,7 +154,7 @@ void Net_2::set_offset_r(const double offset_r) {
 }
 
 //** Network Method **//
-std::vector<std::shared_ptr<Node_2>> Net_2::generate_random_nodes() const {
+std::vector<Node_2> Net_2::generate_random_nodes() const {
     
     // 対象領域のバウンディングボックスを計算する
     //TODO ノード数節約のため oriented bounding box にしたい
@@ -191,14 +191,14 @@ std::vector<std::shared_ptr<Node_2>> Net_2::generate_random_nodes() const {
     std::uniform_real_distribution<> x_dist(offset_xmin, offset_xmax);
     std::uniform_real_distribution<> y_dist(offset_ymin, offset_ymax);
 
-    std::vector<std::shared_ptr<Node_2>> node_ptrs;
+    std::vector<Node_2> nodes;
     int inside_node_num {0};
     while (inside_node_num < node_num) {
-        std::shared_ptr<Node_2> node_ptr = std::make_shared<Node_2>(x_dist(Random_Engine::get_engine()), y_dist(Random_Engine::get_engine()));
-        node_ptrs.push_back(node_ptr);
+        Node_2 node(x_dist(Random_Engine::get_engine()), y_dist(Random_Engine::get_engine()));
+        nodes.push_back(node);
 
         // 内外判定してカウントする
-        switch (domain.bounded_side(*node_ptr)) {
+        switch (domain.bounded_side(node)) {
             case CGAL::ON_BOUNDED_SIDE:
                 ++inside_node_num;
                 break;
@@ -209,11 +209,11 @@ std::vector<std::shared_ptr<Node_2>> Net_2::generate_random_nodes() const {
         }
     }
 
-    return node_ptrs;
+    return nodes;
 
 }
 
-std::vector<std::shared_ptr<Node_2>> Net_2::generate_random_nodes(std::mt19937& rng) const {
+std::vector<Node_2> Net_2::generate_random_nodes(std::mt19937& rng) const {
     
     // 対象領域のバウンディングボックスを計算する
     //TODO ノード数節約のため oriented bounding box にしたい
@@ -250,14 +250,14 @@ std::vector<std::shared_ptr<Node_2>> Net_2::generate_random_nodes(std::mt19937& 
     std::uniform_real_distribution<> x_dist(offset_xmin, offset_xmax);
     std::uniform_real_distribution<> y_dist(offset_ymin, offset_ymax);
 
-    std::vector<std::shared_ptr<Node_2>> node_ptrs;
+    std::vector<Node_2> nodes;
     int inside_node_num {0};
     while (inside_node_num < node_num) {
-        std::shared_ptr<Node_2> node_ptr = std::make_shared<Node_2>(x_dist(rng), y_dist(rng));
-        node_ptrs.push_back(node_ptr);
+        Node_2 node(x_dist(rng), y_dist(rng));
+        nodes.push_back(node);
 
         // 内外判定してカウントする
-        switch (domain.bounded_side(*node_ptr)) {
+        switch (domain.bounded_side(node)) {
             case CGAL::ON_BOUNDED_SIDE:
                 ++inside_node_num;
                 break;
@@ -268,8 +268,19 @@ std::vector<std::shared_ptr<Node_2>> Net_2::generate_random_nodes(std::mt19937& 
         }
     }
 
-    return node_ptrs;
+    return nodes;
 
+}
+
+std::vector<Node_2> Net_2::generate_random_nodes_for_external_use(
+    const int node_num,
+    const Polygon_2& domain,
+    std::mt19937& rng,
+    const double offset_r
+) {
+    Net_2 node_generator(node_num, domain);
+    node_generator.set_offset_r(offset_r);
+    return node_generator.generate_random_nodes(rng);
 }
 
 void Net_2::initialize() {
@@ -279,7 +290,7 @@ void Net_2::initialize() {
     );
 }
 
-void Net_2::initialize(const std::vector<std::shared_ptr<Node_2>> node_ptrs) {
+void Net_2::initialize(const std::vector<Node_2> nodes) {
     throw std::runtime_error(
         "Virtual function. Use derived class.\n"
         "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)

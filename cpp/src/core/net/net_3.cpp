@@ -139,7 +139,7 @@ void Net_3::set_offset_r(const double offset_r) {
 }
 
 //** Network Method **//
-std::vector<std::shared_ptr<Node_3>> Net_3::generate_random_nodes() const {
+std::vector<Node_3> Net_3::generate_random_nodes() const {
     
     // 対象領域のバウンディングボックスを計算する
     //TODO ノード数節約のため oriented bounding box にしたい
@@ -187,7 +187,7 @@ std::vector<std::shared_ptr<Node_3>> Net_3::generate_random_nodes() const {
     std::uniform_real_distribution<> t1_dist(t1_min, t1_max);
     std::uniform_real_distribution<> t2_dist(t2_min, t2_max);
 
-    std::vector<std::shared_ptr<Node_3>> node_ptrs;
+    std::vector<Node_3> nodes;
 
     int inside_node_num {0};
     CGAL::Side_of_triangle_mesh<Polyhedron_3, K> inside(domain); // 内外判定器
@@ -199,13 +199,11 @@ std::vector<std::shared_ptr<Node_3>> Net_3::generate_random_nodes() const {
                                       + t1_dist(Random_Engine::get_engine()) * base_vectors.at(1) 
                                       + t2_dist(Random_Engine::get_engine()) * base_vectors.at(2);
 
-        std::shared_ptr<Node_3> node_ptr = std::make_shared<Node_3>(position_vector.x(), 
-                                                                    position_vector.y(), 
-                                                                    position_vector.z());
-        node_ptrs.push_back(node_ptr);
+        Node_3 node(position_vector.x(), position_vector.y(), position_vector.z());
+        nodes.push_back(node);
 
         // 内外判定してカウントする
-        switch (inside(*node_ptr)) {
+        switch (inside(node)) {
             case CGAL::ON_BOUNDED_SIDE:
                 ++inside_node_num;
                 break;
@@ -216,7 +214,7 @@ std::vector<std::shared_ptr<Node_3>> Net_3::generate_random_nodes() const {
         }
     }
 
-    return node_ptrs;
+    return nodes;
 
 }
 
@@ -227,7 +225,7 @@ void Net_3::initialize() {
     );
 }
 
-void Net_3::initialize(const std::vector<std::shared_ptr<Node_3>> node_ptrs) {
+void Net_3::initialize(const std::vector<Node_3> nodes) {
     throw std::runtime_error(
         "Virtual function. Use derived class.\n"
         "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)

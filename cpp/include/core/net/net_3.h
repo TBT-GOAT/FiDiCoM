@@ -75,9 +75,9 @@ class Net_3 : public Graph_3 {
         /*************************************************
          * @brief ネットワークのノードを生成する
          * 
-         * @return std::vector<std::shared_ptr<Node_3>> 
+         * @return std::vector<Node_3> 
          *************************************************/
-        std::vector<std::shared_ptr<Node_3>> generate_random_nodes() const;
+        std::vector<Node_3> generate_random_nodes() const;
         /*************************************************
          * @brief 最短経路木の一致部分を探索する
          * 
@@ -196,9 +196,9 @@ class Net_3 : public Graph_3 {
         /*************************************************
          * @brief 与えられた頂点でネットワークを初期化する
          * 
-         * @param node_ptrs 
+         * @param nodes 
          *************************************************/
-        virtual void initialize(const std::vector<std::shared_ptr<Node_3>> node_ptrs);
+        virtual void initialize(const std::vector<Node_3> nodes);
         /*************************************************
          * @brief 頂点を削除する
          * 

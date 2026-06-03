@@ -74,9 +74,9 @@ class rDn_3 : public Net_3 {
         /*************************************************
          * @brief 与えられた頂点でランダムドロネー網を初期化する
          * 
-         * @param node_ptrs 
+         * @param nodes 
          *************************************************/
-        void initialize(const std::vector<std::shared_ptr<Node_3>> node_ptrs) override;
+        void initialize(const std::vector<Node_3> nodes) override;
 
         //** Geometric Method **//
         /*************************************************

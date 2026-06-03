@@ -73,15 +73,15 @@ class Net_2 : public Graph_2 {
         /*************************************************
          * @brief ネットワークのノードを生成する
          * 
-         * @return std::vector<std::shared_ptr<Node_2>> 
+         * @return std::vector<Node_2> 
          *************************************************/
-        std::vector<std::shared_ptr<Node_2>> generate_random_nodes() const;
+        std::vector<Node_2> generate_random_nodes() const;
         /*************************************************
          * @brief ネットワークのノードを生成する
          * 
-         * @return std::vector<std::shared_ptr<Node_2>> 
+         * @return std::vector<Node_2> 
          *************************************************/
-        std::vector<std::shared_ptr<Node_2>> generate_random_nodes(std::mt19937& rng) const;
+        std::vector<Node_2> generate_random_nodes(std::mt19937& rng) const;
         /*************************************************
          * @brief 最短経路木の一致部分を探索する
          * 
@@ -201,6 +201,21 @@ class Net_2 : public Graph_2 {
         
         //** Network Method **//
         /*************************************************
+         * @brief ネットワークのノードを生成する（外部利用）
+         * 
+         * @param node_num
+         * @param domain
+         * @param rng
+         * @param offset_r
+         * @return std::vector<Node_2> 
+         *************************************************/
+        static std::vector<Node_2> generate_random_nodes_for_external_use(
+            const int node_num,
+            const Polygon_2& domain,
+            std::mt19937& rng,
+            const double offset_r = OFFSET_R
+        );
+        /*************************************************
          * @brief ネットワークを初期化する
          * 
          *************************************************/
@@ -208,9 +223,9 @@ class Net_2 : public Graph_2 {
         /*************************************************
          * @brief 与えられた頂点でネットワークを初期化する
          * 
-         * @param node_ptrs 
+         * @param nodes 
          *************************************************/
-        virtual void initialize(const std::vector<std::shared_ptr<Node_2>> node_ptrs);
+        virtual void initialize(const std::vector<Node_2> nodes);
         /*************************************************
          * @brief 頂点を削除する
          * 

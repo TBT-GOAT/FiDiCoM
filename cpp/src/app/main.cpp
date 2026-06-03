@@ -1660,6 +1660,7 @@ int main(int argc, char *argv[]) {
             auto global_start = std::chrono::steady_clock::now();
 
             //* 実行
+            #pragma omp parallel for schedule(dynamic) // シードごとに並列化
             for (size_t s_i = 0; s_i < seeds.size(); s_i++) {
 
                 size_t seed = seeds[s_i];
@@ -1679,6 +1680,7 @@ int main(int argc, char *argv[]) {
                 //* 出力の設定
                 bool show_progress = false;
                 bool logging = true;
+                size_t solution_id {seed * 1000000};
 
                 std::string log_data_folder = data_folder_path + "/log/";
                 std::string output_data_folder = data_folder_path + "/output/";
@@ -2740,6 +2742,10 @@ int main(int argc, char *argv[]) {
             std::cout << "Enter the data folder path: ";
             std::cin >> data_folder_path;
 
+            //* 並列数
+            int thread_num = omp_get_max_threads();
+            omp_set_num_threads(thread_num);
+
             //* 入力情報の読み込み
             Polygon_2 domain;                                           // 対象領域
             std::vector<std::shared_ptr<Obstacle_2>> walls;             // 壁（通過不可、不可視）
@@ -2754,6 +2760,18 @@ int main(int argc, char *argv[]) {
             std::string barriers_f_path = input_data_folder + "barriers.cin";
             std::string anchors_f_path = input_data_folder + "anchors.cin";
             std::string inner_point_f_path = input_data_folder + "inner_point.cin";
+
+            //* 出力先の設定
+            std::string log_data_folder = data_folder_path + "/log/";
+            std::string output_data_folder = data_folder_path + "/output/";
+
+            if (!std::filesystem::exists(log_data_folder)) {
+                std::filesystem::create_directories(log_data_folder);
+            }
+            if (!std::filesystem::exists(output_data_folder)) {
+                std::filesystem::create_directories(output_data_folder);
+            }
+
 
             // 対象領域
             domain = Net_2::read_domain(domain_f_path);
@@ -2816,21 +2834,50 @@ int main(int argc, char *argv[]) {
             std::vector<double> sign_visible_ranges = {15000.0, 30000.0, 60000.0};
             std::vector<double> anchor_visible_ranges = {100000.0};
 
-            //* 進行状況出力
-            size_t total_tasks =
-                seeds.size() * 
+            std::vector<std::tuple<size_t, size_t, double, double, double, size_t>> parameter_sets;
+            parameter_sets.reserve(
                 facility_nums.size() *
                 sign_nums.size() *
                 facility_visible_ranges.size() *
                 sign_visible_ranges.size() *
                 anchor_visible_ranges.size() *
-                trial_num;
+                trial_num
+            );
+
+            for (const auto& facility_num : facility_nums) {
+                for (const auto& sign_num : sign_nums) {
+                    const std::vector<double> facility_visible_candidates =
+                        (facility_num == 0) ? std::vector<double>{-1.0} : facility_visible_ranges;
+                    const std::vector<double> sign_visible_candidates =
+                        (sign_num == 0) ? std::vector<double>{-1.0} : sign_visible_ranges;
+
+                    for (const auto& facility_visible_range : facility_visible_candidates) {
+                        for (const auto& sign_visible_range : sign_visible_candidates) {
+
+                            for (const auto& anchor_visible_range : anchor_visible_ranges) {
+                                for (size_t trial {0}; trial < trial_num; trial++) {
+                                    parameter_sets.emplace_back(
+                                        facility_num,
+                                        sign_num,
+                                        facility_visible_range,
+                                        sign_visible_range,
+                                        anchor_visible_range,
+                                        trial
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            //* 進行状況出力
+            size_t total_tasks = seeds.size() * parameter_sets.size();
 
             std::size_t finished_tasks = 0;
             auto global_start = std::chrono::steady_clock::now();
 
             //* 実行
-            #pragma omp parallel for schedule(dynamic) // シードごとに並列化
             for (size_t s_i = 0; s_i < seeds.size(); s_i++) {
 
                 size_t seed = seeds[s_i];
@@ -2847,9 +2894,6 @@ int main(int argc, char *argv[]) {
                 bool show_progress = false;
                 bool logging = true;
                 size_t solution_id {seed * 1000000};
-
-                std::string log_data_folder = data_folder_path + "/log/";
-                std::string output_data_folder = data_folder_path + "/output/";
 
                 std::string seed_tag = "seed_" + std::to_string(seed);
                 std::ofstream parameter_table(output_data_folder + "parameters_" + seed_tag + ".csv");
@@ -2938,6 +2982,7 @@ int main(int argc, char *argv[]) {
                 auto write_distribution = [&](
                     std::ofstream& distribution_table,
                     const std::shared_ptr<SGFLP_SA> solver_ptr, 
+                    const size_t solution_id,
                     const size_t seed, 
                     const int trial) 
                 {
@@ -2970,67 +3015,10 @@ int main(int argc, char *argv[]) {
                     }
                 };
 
-                // ランダムドロネー網の設定
-                rDn_2 rdn(rDn_size, domain);
-                rdn.initialize(rng);
-                rdn.disconnect_edges(obstacles);
-                std::shared_ptr<Net_2> rdn_ptr = std::make_shared<rDn_2>(rdn);
-
-                // 平均エッジ長の計算
-                double total_edge_length = 0.0;
-                Net_2::edge_iterator eit, eit_end;
-                for (boost::tie(eit, eit_end) = boost::edges(*rdn_ptr); eit != eit_end; ++eit) {
-                    auto src = boost::source(*eit, *rdn_ptr);
-                    auto tgt = boost::target(*eit, *rdn_ptr);
-                    auto src_p = (*rdn_ptr)[src];
-                    auto tgt_p = (*rdn_ptr)[tgt];
-                    double edge_length = std::sqrt(
-                        std::pow(src_p->x() - tgt_p->x(), 2) + 
-                        std::pow(src_p->y() - tgt_p->y(), 2)
-                    );
-                    total_edge_length += edge_length;
-                }
-                double num_edges = boost::num_edges(*rdn_ptr);
-                double avg_edge_length = (num_edges > 0) ? total_edge_length / num_edges : 0.0;
+                // シードごとに生成するノードを統一
+                std::vector<Node_2> nodes = Net_2::generate_random_nodes_for_external_use(rDn_size, domain, rng);
                 
                 // パラメータセットごとに最適化
-                std::vector<std::tuple<size_t, size_t, double, double, double, size_t>> parameter_sets;
-                parameter_sets.reserve(
-                    facility_nums.size() *
-                    sign_nums.size() *
-                    facility_visible_ranges.size() *
-                    sign_visible_ranges.size() *
-                    anchor_visible_ranges.size() *
-                    trial_num
-                );
-
-                for (const auto& facility_num : facility_nums) {
-                    for (const auto& sign_num : sign_nums) {
-                        const std::vector<double> facility_visible_candidates =
-                            (facility_num == 0) ? std::vector<double>{-1.0} : facility_visible_ranges;
-                        const std::vector<double> sign_visible_candidates =
-                            (sign_num == 0) ? std::vector<double>{-1.0} : sign_visible_ranges;
-
-                        for (const auto& facility_visible_range : facility_visible_candidates) {
-                            for (const auto& sign_visible_range : sign_visible_candidates) {
-
-                                for (const auto& anchor_visible_range : anchor_visible_ranges) {
-                                    for (size_t trial {0}; trial < trial_num; trial++) {
-                                        parameter_sets.emplace_back(
-                                            facility_num,
-                                            sign_num,
-                                            facility_visible_range,
-                                            sign_visible_range,
-                                            anchor_visible_range,
-                                            trial
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
                 #pragma omp parallel for schedule(dynamic)
                 for (int p_i = 0; p_i < static_cast<int>(parameter_sets.size()); ++p_i) {
                     const auto& param_set = parameter_sets.at(p_i);
@@ -3049,7 +3037,7 @@ int main(int argc, char *argv[]) {
                         trial
                     ) = param_set;
 
-                    const size_t solution_id = seed * 1000000 + static_cast<size_t>(p_i) + 1;
+                    const size_t current_solution_id = seed * 1000000 + static_cast<size_t>(p_i) + 1;
 
                     // スレッドローカル乱数エンジンのシードを試行ごとに分離
                     Random_Engine::set_seed(static_cast<unsigned int>(solution_id));
@@ -3085,7 +3073,38 @@ int main(int argc, char *argv[]) {
                         continue;
                     }
 
+                    // ランダムドロネー網の生成
+                    rDn_2 rdn(rDn_size, domain);
+                    rdn.initialize(nodes);  // あらかじめ生成しておいたノードを使う
+                    rdn.disconnect_edges(obstacles);
                     std::shared_ptr<Net_2> rdn_trial_ptr = std::make_shared<rDn_2>(rdn);
+
+                    // 平均エッジ長の計算
+                    double total_edge_length = 0.0;
+                    Net_2::edge_iterator eit, eit_end;
+                    for (boost::tie(eit, eit_end) = boost::edges(*rdn_trial_ptr); eit != eit_end; ++eit) {
+                        auto src = boost::source(*eit, *rdn_trial_ptr);
+                        auto tgt = boost::target(*eit, *rdn_trial_ptr);
+                        auto src_p = (*rdn_trial_ptr)[src];
+                        auto tgt_p = (*rdn_trial_ptr)[tgt];
+                        double edge_length = std::sqrt(
+                            std::pow(src_p->x() - tgt_p->x(), 2) + 
+                            std::pow(src_p->y() - tgt_p->y(), 2)
+                        );
+                        total_edge_length += edge_length;
+                    }
+                    double num_edges = boost::num_edges(*rdn_trial_ptr);
+                    double avg_edge_length = (num_edges > 0) ? total_edge_length / num_edges : 0.0;
+
+                    std::cout << "processing facility_num=" << facility_num
+                              << ", facility_visible_range=" << facility_visible_range
+                              << ", sign_num=" << sign_num
+                              << ", sign_visible_range=" << sign_visible_range
+                              << ", anchor_visible_range=" << anchor_visible_range
+                              << ", trial=" << trial
+                              << " for seed " << seed
+                              << " (avg_edge_length=" << avg_edge_length << ")" 
+                              << std::endl;
 
                     // ソルバの設定
                     Net_SGFLP net_sgflp(rdn_trial_ptr);
@@ -3113,11 +3132,18 @@ int main(int argc, char *argv[]) {
                     );
 
                     // 求解
-                    std::string log_file_name = log_data_folder + "log_fslp_" + std::to_string(solution_id) + ".cout";
+                    std::string log_file_name = log_data_folder + "log_fslp_" + std::to_string(current_solution_id) + ".cout";
                     std::ofstream log_file(log_file_name);
 
                     auto start = std::chrono::high_resolution_clock::now();
-                    Facilities_Signs_Pair best_solution = sa.solve(initial_solution, show_progress, logging, &log_file);
+                    Facilities_Signs_Pair best_solution;
+                    if (facility_num == 0 && sign_num == 0) {
+                        // サービス供給点、サインがない場合、解の改善のしようがない
+                        best_solution = initial_solution;
+                    } else {
+                        best_solution = sa.solve(initial_solution, show_progress, logging, &log_file);
+                    }
+                    
                     auto end = std::chrono::high_resolution_clock::now();
 
                     // 結果の記録
@@ -3132,7 +3158,7 @@ int main(int argc, char *argv[]) {
                             << max_iter << ","
                             << optim_mode << ","
                             << rDn_size << ","
-                            << solution_id << ","
+                            << current_solution_id << ","
                             << seed << ","
                             << trial << ","
                             << facility_num << ","
@@ -3144,7 +3170,7 @@ int main(int argc, char *argv[]) {
                         parameter_table.flush();
 
                         result_table
-                            << solution_id << ","
+                            << current_solution_id << ","
                             << seed << ","
                             << trial << ","
                             << cost << ","
@@ -3152,9 +3178,9 @@ int main(int argc, char *argv[]) {
                             << std::endl;
                         result_table.flush();
 
-                        write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "facility", best_solution.first);
-                        write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "sign", best_solution.second);
-                        write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "anchor", solver_ptr->net_sgflp.get_anchors());
+                        write_nodes(solution_table, solver_ptr, current_solution_id, seed, trial, "facility", best_solution.first);
+                        write_nodes(solution_table, solver_ptr, current_solution_id, seed, trial, "sign", best_solution.second);
+                        write_nodes(solution_table, solver_ptr, current_solution_id, seed, trial, "anchor", solver_ptr->net_sgflp.get_anchors());
                     }
 
                     std::ofstream distribution_table(output_data_folder +
@@ -3173,7 +3199,7 @@ int main(int argc, char *argv[]) {
                                                      "_" +
                                                      std::to_string(trial) +
                                                      ".csv");
-                    write_distribution(distribution_table, solver_ptr, seed, trial);
+                    write_distribution(distribution_table, solver_ptr, current_solution_id, seed, trial);
 
                     // 設定をもとに戻す
                     net_sgflp.clear();

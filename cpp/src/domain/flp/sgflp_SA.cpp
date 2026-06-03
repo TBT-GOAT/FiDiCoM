@@ -97,6 +97,10 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
     size_t sign_num = signs.size();
     size_t elem_num = facility_num + sign_num;
 
+    if (elem_num == 0) {
+        return std::make_pair(facilities, signs);
+    }
+
     std::uniform_int_distribution<> elem_dist(0, elem_num - 1);
     size_t target_elem_index = elem_dist(Random_Engine::get_engine());
 
@@ -183,6 +187,10 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
     size_t facility_num = facilities.size();
     size_t sign_num = signs.size();
     size_t elem_num = facility_num + sign_num;
+
+    if (elem_num == 0) {
+        return std::make_pair(facilities, signs);
+    }
 
     std::uniform_int_distribution<> elem_dist(0, elem_num - 1);
     size_t target_elem_index = elem_dist(Random_Engine::get_engine());

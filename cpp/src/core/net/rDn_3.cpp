@@ -16,10 +16,10 @@
 //** Network Method **//
 void rDn_3::initialize() {
     // ドロネー分割を実行する
-    std::vector<std::shared_ptr<Node_3>> node_ptrs = generate_random_nodes();
+    std::vector<Node_3> nodes = generate_random_nodes();
 
-    for (auto node_ptr : node_ptrs) {
-        tessellation.insert(*node_ptr);
+    for (auto& node : nodes) {
+        tessellation.insert(node);
     }
 
     // ノードを生成し，Graph_3::vertex_descriptorに割り当てる
@@ -50,12 +50,12 @@ void rDn_3::initialize() {
 
 }
 
-void rDn_3::initialize(const std::vector<std::shared_ptr<Node_3>> node_ptrs) {
+void rDn_3::initialize(const std::vector<Node_3> nodes) {
     
-    node_num = node_ptrs.size();
+    node_num = nodes.size();
 
-    for (auto node_ptr : node_ptrs) {
-        tessellation.insert(*node_ptr);
+    for (auto& node : nodes) {
+        tessellation.insert(node);
     }
 
     // ノードを生成し，Graph_3::vertex_descriptorに割り当てる

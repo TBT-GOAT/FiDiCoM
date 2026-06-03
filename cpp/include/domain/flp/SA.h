@@ -129,6 +129,7 @@ class Simulated_Annealing {
             double temperature = this->initial_temperature;
             
             for (size_t i {0}; i < this->max_iteration && temperature > MIN_TEMPERATURE; ++i) {
+                // std::cout << "Iteration: " << i + 1 << " / " << this->max_iteration << std::endl;
 
                 std::chrono::high_resolution_clock::time_point start_time = std::chrono::high_resolution_clock::now();
                 
@@ -141,26 +142,16 @@ class Simulated_Annealing {
 
                 // 最適解の更新
                 if (next_cost < best_cost) {
-                    std::cout
-                    << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10) 
-                    << "New best solution found! Cost improved from " << best_cost << " to " << next_cost << "." << std::endl;
-
+                    // std::cout << "New best solution found! Cost improved from " << best_cost << " to " << next_cost << std::endl;
                     best_solution = next_solution;
                     best_cost = next_cost;
                 }
 
                 // 解の更新
                 if (should_accept(current_cost, next_cost, temperature)) {
-                    std::cout 
-                    << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
-                    << "Transition accepted. Cost changed from " << current_cost << " to " << next_cost << "." << std::endl;
-
+                    // std::cout << "Accepted new solution with cost " << next_cost << " (delta: " << delta_cost << ", temperature: " << temperature << ")" << std::endl;
                     current_solution = next_solution;
                     current_cost = next_cost;
-                } else {
-                    std::cout 
-                    << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
-                    << "Transition rejected. Cost remains at " << current_cost << "." << std::endl;
                 }
                 
                 temperature *= this->cooling_rate;

@@ -1660,7 +1660,6 @@ int main(int argc, char *argv[]) {
             auto global_start = std::chrono::steady_clock::now();
 
             //* 実行
-            #pragma omp parallel for schedule(dynamic) // シードごとに並列化
             for (size_t s_i = 0; s_i < seeds.size(); s_i++) {
 
                 size_t seed = seeds[s_i];
@@ -1680,7 +1679,6 @@ int main(int argc, char *argv[]) {
                 //* 出力の設定
                 bool show_progress = false;
                 bool logging = true;
-                size_t solution_id {seed * 1000000};
 
                 std::string log_data_folder = data_folder_path + "/log/";
                 std::string output_data_folder = data_folder_path + "/output/";
@@ -2699,12 +2697,12 @@ int main(int argc, char *argv[]) {
 
             // 解の改善
             //* 焼きなまし法のハイパーパラメータの設定
-            double init_temperature = 1000.0;     // 初期温度
+            double init_temperature = 1000000.0;     // 初期温度
             double cooling_rate = 0.999;          // 冷却率
             double max_iter = 100;               // 最大反復回数
 
             //* 出力の設定
-            bool show_progress = true;
+            bool show_progress = false;
             bool logging = true;
 
             //* 焼きなまし法の実行
@@ -2732,6 +2730,480 @@ int main(int argc, char *argv[]) {
             case_num++;
             write_test_result();
 
+        }
+        case 19: {
+            //** Sign-Guided Facility Location Planning **//
+            typedef std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> Facilities_Signs_Pair;
+
+            //* データフォルダの入力
+            std::string data_folder_path;
+            std::cout << "Enter the data folder path: ";
+            std::cin >> data_folder_path;
+
+            //* 入力情報の読み込み
+            Polygon_2 domain;                                           // 対象領域
+            std::vector<std::shared_ptr<Obstacle_2>> walls;             // 壁（通過不可、不可視）
+            std::vector<std::shared_ptr<Obstacle_2>> barriers;          // 障壁（通過不可、可視）
+            std::vector<std::shared_ptr<Obstacle_2>> domain_segments;   // 対象領域の外形線
+            std::vector<Point_2> anchors;                               // 拠点
+            Point_2 inner_point;                                        // 対象領域内部にある点
+
+            std::string input_data_folder = data_folder_path + "/input/";
+            std::string domain_f_path = input_data_folder + "domain.cin";
+            std::string walls_f_path = input_data_folder + "walls.cin";
+            std::string barriers_f_path = input_data_folder + "barriers.cin";
+            std::string anchors_f_path = input_data_folder + "anchors.cin";
+            std::string inner_point_f_path = input_data_folder + "inner_point.cin";
+
+            // 対象領域
+            domain = Net_2::read_domain(domain_f_path);
+            
+            // 障害物
+            walls = Obstacle_2::read_obstacles(walls_f_path);
+            barriers = Obstacle_2::read_obstacles(barriers_f_path);
+            domain_segments = Obstacle_2::convert_polygon(domain, 
+                                            false, 
+                                            false, 
+                                            true, 
+                                            Obstacle_2::DOMAIN_NAME);
+
+            std::vector<std::shared_ptr<Obstacle_2>> obstacles;
+            obstacles.insert(obstacles.end(), walls.begin(), walls.end());
+            obstacles.insert(obstacles.end(), barriers.begin(), barriers.end());
+            obstacles.insert(obstacles.end(), domain_segments.begin(), domain_segments.end());
+
+            // 拠点
+            std::ifstream anchors_file(anchors_f_path);
+
+            if (!anchors_file.is_open()) {
+                std::cerr << "Could not open the anchors file!" << std::endl;
+            }
+
+            std::string aline;
+            double ax;
+            double ay;
+            while (std::getline(anchors_file, aline)) {
+                std::istringstream aline_stream(aline);
+                aline_stream >> ax >> ay;
+                anchors.emplace_back(ax, ay);
+            }
+            anchors_file.close();
+
+            // 内部点
+            std::ifstream inner_point_file(inner_point_f_path);
+            double x, y;
+            inner_point_file >> x >> y;
+            inner_point = Point_2(x, y);
+            inner_point_file.close();
+
+
+            //* 焼きなまし法のハイパーパラメータの設定
+            double init_temperature = 1000000.0;    // 初期温度 //TODO 評価関数に応じてアジャスト
+            double cooling_rate = 0.999;            // 冷却率
+            double max_iter = 1000;                 // 最大反復回数  //TODO 収束曲線を見てアジャスト
+
+            //* 試行するパラメータセット
+            size_t optim_mode = SGFLP_SA::MODE_MINSUM;
+            size_t rDn_size = 100000;
+            std::vector<size_t> seeds {
+                17,19,23//,29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73,
+                //79,83,89,97,101,103,107,109,113,127,131,137,139,149,151
+            };
+            size_t trial_num = 1;
+            std::vector<size_t> facility_nums = {0, 2, 4, 8};
+            std::vector<size_t> sign_nums = {0, 4, 16, 32};
+            std::vector<double> facility_visible_ranges = {0.0, 15000.0, 30000.0, 60000.0};
+            std::vector<double> sign_visible_ranges = {15000.0, 30000.0, 60000.0};
+            std::vector<double> anchor_visible_ranges = {100000.0};
+
+            //* 進行状況出力
+            size_t total_tasks =
+                seeds.size() * 
+                facility_nums.size() *
+                sign_nums.size() *
+                facility_visible_ranges.size() *
+                sign_visible_ranges.size() *
+                anchor_visible_ranges.size() *
+                trial_num;
+
+            std::size_t finished_tasks = 0;
+            auto global_start = std::chrono::steady_clock::now();
+
+            //* 実行
+            #pragma omp parallel for schedule(dynamic) // シードごとに並列化
+            for (size_t s_i = 0; s_i < seeds.size(); s_i++) {
+
+                size_t seed = seeds[s_i];
+
+                #pragma omp critical
+                std::cout << "seed " << seed
+                        << " thread " << omp_get_thread_num()
+                        << std::endl;
+
+                Random_Engine::set_seed(seed);
+                auto& rng = Random_Engine::get_engine();
+
+                //* 出力の設定
+                bool show_progress = false;
+                bool logging = true;
+                size_t solution_id {seed * 1000000};
+
+                std::string log_data_folder = data_folder_path + "/log/";
+                std::string output_data_folder = data_folder_path + "/output/";
+
+                std::string seed_tag = "seed_" + std::to_string(seed);
+                std::ofstream parameter_table(output_data_folder + "parameters_" + seed_tag + ".csv");
+                std::ofstream result_table(output_data_folder + "experiment_results_" + seed_tag + ".csv");
+                std::ofstream solution_table(output_data_folder + "solutions_" + seed_tag + ".csv");
+                
+                if (!parameter_table.is_open()) {
+                    std::cerr << "Failed to open parameter_table\n";
+                }
+                if (!result_table.is_open()) {
+                    std::cerr << "Failed to open result_table\n";
+                }
+                if (!solution_table.is_open()) {
+                    std::cerr << "Failed to open solution_table\n";
+                }
+                
+                parameter_table << std::scientific
+                            << std::setprecision(std::numeric_limits<double>::max_digits10);
+                result_table << std::scientific
+                            << std::setprecision(std::numeric_limits<double>::max_digits10);
+                solution_table << std::scientific
+                            << std::setprecision(std::numeric_limits<double>::max_digits10);
+
+                parameter_table
+                    << "init_temperature,"
+                    << "cooling_rate,"
+                    << "max_iter,"
+                    << "mode,"
+                    << "rDn_size,"
+                    << "solution_id,"
+                    << "seed,"
+                    << "trial,"
+                    << "#facility,"
+                    << "vis_range_facility,"
+                    << "#sign,"
+                    << "vis_range_sign,"
+                    << "vis_range_anchor,"
+                    << std::endl;
+
+                result_table
+                    << "solution_id,"
+                    << "seed,"
+                    << "trial,"
+                    << "cost,"
+                    << "runtime"
+                    << std::endl;
+
+                solution_table
+                    << "solution_id,"
+                    << "seed,"
+                    << "trial,"
+                    << "type,"
+                    << "node_id,"
+                    << "x,"
+                    << "y,"
+                    << "z"
+                    << std::endl;
+
+                auto write_nodes = [](
+                    std::ofstream& solution_table,
+                    const std::shared_ptr<SGFLP_SA> solver_ptr, 
+                    const size_t solution_id,
+                                    const size_t seed, 
+                                    const int trial, 
+                                    const std::string& type, 
+                    const auto& container) 
+                {
+                    for (const auto& id : container) {
+
+                        Node_2 node = *((*(solver_ptr->net_sgflp.net_ptr))[id]);
+
+                        solution_table
+                            << solution_id << ","
+                            << seed << ","
+                            << trial << ","
+                            << type << ","
+                            << id << ","
+                            << node.x() << ","
+                            << node.y() << ","
+                            << "0.0"
+                            << std::endl;
+                    }
+                };
+
+                // distribution table の書き出し関数
+                auto write_distribution = [&](
+                    std::ofstream& distribution_table,
+                    const std::shared_ptr<SGFLP_SA> solver_ptr, 
+                    const size_t seed, 
+                    const int trial) 
+                {
+                    distribution_table
+                        << "solution_id,"
+                        << "seed,"
+                        << "trial,"
+                        << "node_id,"
+                        << "x,"
+                        << "y,"
+                        << "z,"
+                        << "accessibility,"
+                        << "pattern"
+                        << std::endl;
+
+                    for (const auto& demand : solver_ptr->net_sgflp.get_demands()) {
+                        std::pair<size_t, double> accessibility = solver_ptr->net_sgflp.calculate_cost(demand);
+
+                        distribution_table
+                            << solution_id << ","
+                            << seed << ","
+                            << trial << ","
+                            << demand << ","
+                            << (*solver_ptr->net_sgflp.net_ptr)[demand]->x() << ","
+                            << (*solver_ptr->net_sgflp.net_ptr)[demand]->y() << ","
+                            << "0.0" << ","
+                            << accessibility.second << ","
+                            << accessibility.first
+                            << '\n';
+                    }
+                };
+
+                // ランダムドロネー網の設定
+                rDn_2 rdn(rDn_size, domain);
+                rdn.initialize(rng);
+                rdn.disconnect_edges(obstacles);
+                std::shared_ptr<Net_2> rdn_ptr = std::make_shared<rDn_2>(rdn);
+
+                // 平均エッジ長の計算
+                double total_edge_length = 0.0;
+                Net_2::edge_iterator eit, eit_end;
+                for (boost::tie(eit, eit_end) = boost::edges(*rdn_ptr); eit != eit_end; ++eit) {
+                    auto src = boost::source(*eit, *rdn_ptr);
+                    auto tgt = boost::target(*eit, *rdn_ptr);
+                    auto src_p = (*rdn_ptr)[src];
+                    auto tgt_p = (*rdn_ptr)[tgt];
+                    double edge_length = std::sqrt(
+                        std::pow(src_p->x() - tgt_p->x(), 2) + 
+                        std::pow(src_p->y() - tgt_p->y(), 2)
+                    );
+                    total_edge_length += edge_length;
+                }
+                double num_edges = boost::num_edges(*rdn_ptr);
+                double avg_edge_length = (num_edges > 0) ? total_edge_length / num_edges : 0.0;
+                
+                // パラメータセットごとに最適化
+                std::vector<std::tuple<size_t, size_t, double, double, double, size_t>> parameter_sets;
+                parameter_sets.reserve(
+                    facility_nums.size() *
+                    sign_nums.size() *
+                    facility_visible_ranges.size() *
+                    sign_visible_ranges.size() *
+                    anchor_visible_ranges.size() *
+                    trial_num
+                );
+
+                for (const auto& facility_num : facility_nums) {
+                    for (const auto& sign_num : sign_nums) {
+                        const std::vector<double> facility_visible_candidates =
+                            (facility_num == 0) ? std::vector<double>{-1.0} : facility_visible_ranges;
+                        const std::vector<double> sign_visible_candidates =
+                            (sign_num == 0) ? std::vector<double>{-1.0} : sign_visible_ranges;
+
+                        for (const auto& facility_visible_range : facility_visible_candidates) {
+                            for (const auto& sign_visible_range : sign_visible_candidates) {
+
+                                for (const auto& anchor_visible_range : anchor_visible_ranges) {
+                                    for (size_t trial {0}; trial < trial_num; trial++) {
+                                        parameter_sets.emplace_back(
+                                            facility_num,
+                                            sign_num,
+                                            facility_visible_range,
+                                            sign_visible_range,
+                                            anchor_visible_range,
+                                            trial
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                #pragma omp parallel for schedule(dynamic)
+                for (int p_i = 0; p_i < static_cast<int>(parameter_sets.size()); ++p_i) {
+                    const auto& param_set = parameter_sets.at(p_i);
+                    size_t facility_num;
+                    size_t sign_num;
+                    double facility_visible_range;
+                    double sign_visible_range;
+                    double anchor_visible_range;
+                    size_t trial;
+                    std::tie(
+                        facility_num,
+                        sign_num,
+                        facility_visible_range,
+                        sign_visible_range,
+                        anchor_visible_range,
+                        trial
+                    ) = param_set;
+
+                    const size_t solution_id = seed * 1000000 + static_cast<size_t>(p_i) + 1;
+
+                    // スレッドローカル乱数エンジンのシードを試行ごとに分離
+                    Random_Engine::set_seed(static_cast<unsigned int>(solution_id));
+
+                    // 実行済みならスキップ
+                    std::string current_distribution_file = output_data_folder +
+                                                            "distribution_" +
+                                                            std::to_string(seed) +
+                                                            "_" +
+                                                            std::to_string(facility_num) +
+                                                            "_" +
+                                                            std::to_string(facility_visible_range) +
+                                                            "_" +
+                                                            std::to_string(sign_num) +
+                                                            "_" +
+                                                            std::to_string(sign_visible_range) +
+                                                            "_" +
+                                                            std::to_string(anchor_visible_range) +
+                                                            "_" +
+                                                            std::to_string(trial) +
+                                                            ".csv";
+
+                    if (std::filesystem::exists(current_distribution_file)) {
+                        #pragma omp critical
+                        std::cout << "Skipping facility_num=" << facility_num
+                                  << ", facility_visible_range=" << facility_visible_range
+                                  << ", sign_num=" << sign_num
+                                  << ", sign_visible_range=" << sign_visible_range
+                                  << ", anchor_visible_range=" << anchor_visible_range
+                                  << ", trial=" << trial
+                                  << " for seed " << seed
+                                  << " (already exists: " << current_distribution_file << ")" << std::endl;
+                        continue;
+                    }
+
+                    std::shared_ptr<Net_2> rdn_trial_ptr = std::make_shared<rDn_2>(rdn);
+
+                    // ソルバの設定
+                    Net_SGFLP net_sgflp(rdn_trial_ptr);
+                    net_sgflp.set_facility_visible_length(facility_visible_range);
+                    net_sgflp.set_sign_visible_length(sign_visible_range);
+                    net_sgflp.set_anchor_visible_length(anchor_visible_range);
+                    net_sgflp.set_demands(inner_point);
+                    net_sgflp.initialize_facilities(facility_num);
+                    net_sgflp.initialize_signs(sign_num);
+                    net_sgflp.initialize_anchors(anchors);
+
+                    Facilities_Signs_Pair initial_solution = std::make_pair(net_sgflp.get_facilities(), net_sgflp.get_signs());
+                    std::shared_ptr<SGFLP_SA> solver_ptr = std::make_shared<SGFLP_SA>(net_sgflp);
+
+                    Simulated_Annealing<std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>> sa(
+                        init_temperature,
+                        cooling_rate,
+                        max_iter,
+                        [solver_ptr, optim_mode](const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> solution){
+                            return solver_ptr->evaluate_function(solution, optim_mode);
+                        },
+                        [solver_ptr](const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>& current_solution){
+                            return solver_ptr->generate_neighbor_function_with_jump(current_solution);
+                        }
+                    );
+
+                    // 求解
+                    std::string log_file_name = log_data_folder + "log_fslp_" + std::to_string(solution_id) + ".cout";
+                    std::ofstream log_file(log_file_name);
+
+                    auto start = std::chrono::high_resolution_clock::now();
+                    Facilities_Signs_Pair best_solution = sa.solve(initial_solution, show_progress, logging, &log_file);
+                    auto end = std::chrono::high_resolution_clock::now();
+
+                    // 結果の記録
+                    double cost = solver_ptr->evaluate_function(best_solution, optim_mode);
+                    auto runtime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+                    #pragma omp critical(case19_io)
+                    {
+                        parameter_table
+                            << init_temperature << ","
+                            << cooling_rate << ","
+                            << max_iter << ","
+                            << optim_mode << ","
+                            << rDn_size << ","
+                            << solution_id << ","
+                            << seed << ","
+                            << trial << ","
+                            << facility_num << ","
+                            << facility_visible_range << ","
+                            << sign_num << ","
+                            << sign_visible_range << ","
+                            << anchor_visible_range
+                            << std::endl;
+                        parameter_table.flush();
+
+                        result_table
+                            << solution_id << ","
+                            << seed << ","
+                            << trial << ","
+                            << cost << ","
+                            << runtime
+                            << std::endl;
+                        result_table.flush();
+
+                        write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "facility", best_solution.first);
+                        write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "sign", best_solution.second);
+                        write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "anchor", solver_ptr->net_sgflp.get_anchors());
+                    }
+
+                    std::ofstream distribution_table(output_data_folder +
+                                                     "distribution_" +
+                                                     std::to_string(seed) +
+                                                     "_" +
+                                                     std::to_string(facility_num) +
+                                                     "_" +
+                                                     std::to_string(facility_visible_range) +
+                                                     "_" +
+                                                     std::to_string(sign_num) +
+                                                     "_" +
+                                                     std::to_string(sign_visible_range) +
+                                                     "_" +
+                                                     std::to_string(anchor_visible_range) +
+                                                     "_" +
+                                                     std::to_string(trial) +
+                                                     ".csv");
+                    write_distribution(distribution_table, solver_ptr, seed, trial);
+
+                    // 設定をもとに戻す
+                    net_sgflp.clear();
+
+                    // 進行状況
+                    size_t done;
+
+                    #pragma omp atomic capture
+                    done = ++finished_tasks;
+
+                    auto now = std::chrono::steady_clock::now();
+                    double elapsed =
+                        std::chrono::duration<double>(now - global_start).count();
+
+                    double rate = done / elapsed;
+                    double remaining = (total_tasks - done) / rate;
+
+                    #pragma omp critical
+                    {
+                    std::cout << "\rProgress "
+                              << done << "/" << total_tasks
+                              << " | ETA "
+                              << remaining/60 << " min"
+                              << std::flush;
+                    }
+                }
+
+            }
+
+            break;
         }
 
         default:

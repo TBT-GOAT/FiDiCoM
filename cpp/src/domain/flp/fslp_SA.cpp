@@ -1,4 +1,3 @@
-//TODO 内部状態を変えない
 
 // include header
 #include "domain/flp/fslp_SA.h"

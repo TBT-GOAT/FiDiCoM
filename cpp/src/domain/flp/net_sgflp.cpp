@@ -679,7 +679,7 @@ void Net_SGFLP::initialize_visibility_distance_matrix() {
     };
 
     const auto get_coverage_tree = [&](const Net_2::vertex_descriptor entity)
-        -> std::vector<std::pair<Net_2::vertex_descriptor, double>> {
+        -> const std::vector<std::pair<Net_2::vertex_descriptor, double>>& {
         if (this->facility_coverage_trees.find(entity) != this->facility_coverage_trees.end()) {
             return this->facility_coverage_trees.at(entity); // サービス供給点
         }
@@ -699,7 +699,7 @@ void Net_SGFLP::initialize_visibility_distance_matrix() {
     // 可視距離の計算
     for (std::size_t i {0}; i < entities.size(); ++i) {
         const Net_2::vertex_descriptor vantage_entity = entities.at(i);
-        const std::vector<std::pair<Net_2::vertex_descriptor, double>> vantage_coverage_tree =
+        const auto& vantage_coverage_tree =
             get_coverage_tree(vantage_entity);
 
         //TODO begin here ========================================
@@ -766,7 +766,6 @@ void Net_SGFLP::initialize_visibility_distance_matrix() {
 }
 
 void Net_SGFLP::initialize_navigation_assignment() {
-    std::cout << "Initializing navigation assignment..." << std::endl;
     this->navigation_assignment.clear();
 
     this->initialize_entity_groups();
@@ -819,11 +818,7 @@ void Net_SGFLP::build_assignments() {
     assign_sign_to_demand();
     assign_anchor_to_demand();
 
-    if (this->entity_groups.empty()) {
-        initialize_navigation_assignment();
-    } else {
-        update_navigation_assignment();
-    }
+    initialize_navigation_assignment(); //TODO 構成し直すのではなく、差分更新を検討する
 
 }
 
@@ -832,6 +827,9 @@ void Net_SGFLP::clear_assignments() {
     sign_assignment_to_demand.clear();
     anchor_assignment_to_demand.clear();
 
+    //TODO visibility_distance_matrix を clear せずに cache することも検討する
+    entity_groups.clear();
+    visibility_distance_matrix.clear();
     navigation_assignment.clear();
 }
 
@@ -1088,168 +1086,27 @@ void Net_SGFLP::assign_navigation() {
         
         if (sign_idx >= entities.size()) {
             throw std::runtime_error(
-                "Sign index is out of entities range.\n"
+                "Sign index " + std::to_string(sign_idx) + " is out of entities range " + std::to_string(entities.size()) + ".\n"
                 "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
             );
         }
 
-        if (parents[sign_idx] >= entities.size()) {
+        if (parents[sign_idx] >= entities.size() + 1) {
             throw std::runtime_error(
-                "Parent index of sign points to dummy or invalid node.\n"
+                "Parent index of sign " + std::to_string(sign_idx) + " points to invalid node " + std::to_string(parents[sign_idx]) + " .\n"
                 "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
             );
         }
 
-        this->navigation_assignment[entities[sign_idx]] = entities[parents[sign_idx]];
-    }
-}
-
-std::pair<size_t, size_t> Net_SGFLP::update_entity_groups() {
-    std::vector<std::pair<size_t, size_t>> update_info;
-    
-    // 更新後のエンティティ
-    std::vector<std::vector<Net_2::vertex_descriptor>> updated_entity_groups = {
-        facilities,
-        signs,
-        anchors
-    };
-
-    // 更新後と前のエンティティを比較
-    //!更新されなかったエンティティのインデックスは不変であることが前提
-    for (size_t group_idx = 0; group_idx < updated_entity_groups.size(); ++group_idx) {
-        const auto& group = updated_entity_groups[group_idx];
-        for (size_t vertex_idx = 0; vertex_idx < group.size(); ++vertex_idx) {
-            if (group[vertex_idx] != this->entity_groups[group_idx][vertex_idx]) {
-                // 更新後と前で頂点が異なる場合、更新情報に追加
-
-                if (group_idx == 2) {
-                    // 拠点は更新されないためエラー
-                    throw std::runtime_error(
-                        "Anchor should not be updated.\n"
-                        "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
-                    );
-                }
-                
-                update_info.emplace_back(group_idx, vertex_idx);
-            }
-        }
-    }
-   
-    // 更新の整合性チェック
-    if (update_info.empty()) {
-        std::cout << "Warning: No entity has been updated." << std::endl;
-        return std::make_pair(-1, -1);
-    }
-
-    if (update_info.size() > 1) {
-        std::cout << "Warning: Multiple entities have been updated. Rebuilding navigation assignment from scratch." << std::endl;
-        for (const auto& info : update_info) {
-            Net_2::vertex_descriptor updated_vertex = updated_entity_groups[info.first][info.second];
-            std::cout << "Updated entity group index: " << info.first << ", vertex index: " << info.second << ", vertex: " << updated_vertex << std::endl;
-        }
-        this->entity_groups = updated_entity_groups;
-        return std::make_pair(-2, -2);
-    }
-
-    // エンティティの更新
-    this->entity_groups = updated_entity_groups;
-
-    // 更新情報を返す
-    return update_info.front();
-
-}
-
-void Net_SGFLP::update_visibility_distance_matrix() {
-    // 更新されたエンティティを同定
-    std::pair<size_t, size_t> update_info = update_entity_groups();
-    if (update_info.first == -1 && update_info.second == -1) {
-        // 更新されたエンティティがない場合は何もしない
-        return;
-    }
-    if (update_info.first == -2 && update_info.second == -2) {
-        // 複数エンティティが更新された場合は行列を全再構築する
-        this->initialize_entity_groups();
-        this->initialize_visibility_distance_matrix();
-        return;
-    }
-
-    // 更新されたエンティティからの可視距離を計算
-    Net_2::vertex_descriptor entity = this->entity_groups[update_info.first][update_info.second];
-    std::vector<std::pair<Net_2::vertex_descriptor, double>> entity_coverage_tree;
-
-    if (update_info.first == 0) {
-        // サービス供給点
-        entity_coverage_tree = this->facility_coverage_trees[entity];
-    } else if (update_info.first == 1) {
-        // サイン
-        entity_coverage_tree = this->sign_coverage_trees[entity];
-    } else if (update_info.first == 2) {
-        // 拠点
-        entity_coverage_tree = this->anchor_coverage_trees[entity];
-    }
-
-    //TODO begin here ========================================
-    //TODO Net_2::calculate_visible_vertices と同じことをしているので、共通化できないか検討する
-    // 最短経路木を反転する
-    // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
-    std::unordered_map<Net_2::vertex_descriptor, std::vector<Net_2::vertex_descriptor>> entity_coverage_tree_r;
-
-    for (std::size_t i {0}; i < entity_coverage_tree.size(); ++i) {
-        Net_2::vertex_descriptor parent = entity_coverage_tree.at(i).first;
-        if (parent != i && parent != Net_2::null_vertex()) {
-            entity_coverage_tree_r[parent].push_back(i);
-        }
-    }
-
-    // 可視である頂点を探索する
-    std::unordered_set<Net_2::vertex_descriptor> visible_vertices;
-
-    visible_vertices.insert(entity);
-    this->net_ptr->search_visible_vertices(entity, 
-                                           entity_coverage_tree, 
-                                           entity_coverage_tree_r,
-                                           visible_vertices, 
-                                           std::numeric_limits<double>::max()); // 経路割当の際は可視距離の制限なし
-    //TODO end here ========================================
-    
-    // 可視距離行列を更新する
-    std::vector<Net_2::vertex_descriptor> entities {};
-    entities.insert(entities.end(), entity_groups[0].begin(), entity_groups[0].end()); // サービス供給点
-    entities.insert(entities.end(), entity_groups[1].begin(), entity_groups[1].end()); // サイン
-    entities.insert(entities.end(), entity_groups[2].begin(), entity_groups[2].end()); // 拠点
-
-    size_t entity_idx = find_index(entities, entity);
-    
-    if (entity_idx == -1) {
-        throw std::runtime_error(
-            "Updated entity is not found in entities list.\n"
-            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
-        );
-    }
-
-    //!ダミーノード（最終行、列）の値は変えない。サービス供給点、サイン、拠点の数は不変。
-    for (size_t i {0}; i < entities.size(); ++i) {
-        if (visible_vertices.find(entities.at(i)) != visible_vertices.end()) {
-            // 可視である場合は距離を計算
-            double vis_distance = entity_coverage_tree.at(i).second; // vantage_entityからtarget_entityへの可視距離
-            this->visibility_distance_matrix.at(entity_idx).at(i) = vis_distance;
-            this->visibility_distance_matrix.at(i).at(entity_idx) = vis_distance;
+        if (parents[sign_idx] == dummy_node_idx) {
+            // ダミーノードが親の場合は遷移先なし
+            this->navigation_assignment[entities[sign_idx]] = UNINITIALIZED_DUMMY_VERTEX_ENTITIES;
         } else {
-            // 可視でない場合は距離を無限大にする
-            this->visibility_distance_matrix.at(entity_idx).at(i) = std::numeric_limits<double>::max();
-            this->visibility_distance_matrix.at(i).at(entity_idx) = std::numeric_limits<double>::max();
+            // それ以外は親を遷移先として割り当てる
+            this->navigation_assignment[entities[sign_idx]] = entities.at(parents[sign_idx]);
         }
+
     }
-
-}
-
-void Net_SGFLP::update_navigation_assignment() {
-    // std::cout << "Updating navigation assignment..." << std::endl;
-    this->navigation_assignment.clear();
-
-    this->update_visibility_distance_matrix();
-    this->assign_navigation();
-
 }
 
 //** Cost Function Methods **//
@@ -1266,7 +1123,14 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost(Net_2::vertex_descriptor dem
         return calculate_cost_to_visible_facility(demand, assigned_facility.second);
     } else if (assigned_sign.first) {
         // サインが割り当てられている場合
+        
+        if (this->navigation_assignment.at(assigned_sign.second) == UNINITIALIZED_DUMMY_VERTEX_ENTITIES) {
+            // サインの遷移先がない場合は、何も割り当てられていないことと同じ
+            return calculate_cost_from_uncovered_demand(demand);
+        }
+        
         return calculate_cost_to_follow_signage(demand, assigned_sign.second);
+        
     } else {
         // 何も割り当てられていない場合
         return calculate_cost_from_uncovered_demand(demand);
@@ -1309,7 +1173,7 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost_to_follow_signage(Net_2::ver
             shortest_path_tree = &this->facility_shortest_path_trees.at(next_entity);
         } else {
             throw std::runtime_error(
-                "Next entity in navigation assignment has to be facility, sign or anchor.\n"
+                "Next entity in navigation assignment has to be facility, sign or anchor, but " + std::to_string(next_entity) + ".\n"
                 "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
             );
         }
@@ -1381,7 +1245,7 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost_to_follow_signage(Net_2::ver
         shortest_path_tree = &this->facility_shortest_path_trees.at(last_entity);
     } else {
         throw std::runtime_error(
-            "Next entity in navigation assignment has to be facility, sign or anchor.\n"
+            "Next entity in navigation assignment has to be facility, sign or anchor, but " + std::to_string(next_entity) + ".\n"
             "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
         );
     }
@@ -1551,6 +1415,10 @@ std::tuple<int,
             return std::make_tuple(1, v_on_the_way.first, this->facility_assignment_to_demand.at(v_on_the_way.first));
         } else if (this->sign_assignment_to_demand.find(v_on_the_way.first) != this->sign_assignment_to_demand.end()) {
             // サイン
+            if (this->navigation_assignment.at(this->sign_assignment_to_demand.at(v_on_the_way.first)) == UNINITIALIZED_DUMMY_VERTEX_ENTITIES) {
+                // サインの遷移先がない場合はエンティティとしない
+                continue;
+            }
             return std::make_tuple(2, v_on_the_way.first, this->sign_assignment_to_demand.at(v_on_the_way.first));
         }
     }
@@ -1658,7 +1526,7 @@ std::pair<size_t, std::vector<Net_2::vertex_descriptor>> Net_SGFLP::calculate_pa
             shortest_path_tree = &this->facility_shortest_path_trees.at(next_entity);
         } else {
             throw std::runtime_error(
-                "Next entity in navigation assignment has to be facility, sign or anchor.\n"
+                "Next entity in navigation assignment has to be facility, sign or anchor, but " + std::to_string(next_entity) + ".\n"
                 "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
             );
         }
@@ -1726,7 +1594,7 @@ std::pair<size_t, std::vector<Net_2::vertex_descriptor>> Net_SGFLP::calculate_pa
         shortest_path_tree = &this->facility_shortest_path_trees.at(last_entity);
     } else {
         throw std::runtime_error(
-            "Next entity in navigation assignment has to be facility, sign or anchor.\n"
+            "Next entity in navigation assignment has to be facility, sign or anchor, but " + std::to_string(next_entity) + ".\n"
             "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
         );
     }

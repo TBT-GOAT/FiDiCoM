@@ -10,7 +10,10 @@
 #include <chrono>
 
 //** Constructor **//
-SGFLP_SA::SGFLP_SA(Net_SGFLP net_sgflp) : net_sgflp(std::move(net_sgflp)) {}
+SGFLP_SA::SGFLP_SA(Net_SGFLP net_sgflp, 
+                   double jump_rate, 
+                   double sampling_rate)
+     : net_sgflp(std::move(net_sgflp)), jump_rate(jump_rate), sampling_rate(sampling_rate) {}
 
 //** Objective Function Method **//
 double SGFLP_SA::evaluate_function(
@@ -82,15 +85,46 @@ double SGFLP_SA::evaluate_function(
     // 目的関数の計算
     double objective;
 
+    // 需要点のサンプリング
+    const auto& demands = this->net_sgflp.get_demands();
+
+    std::vector<Net_2::vertex_descriptor> evaluated_demands;
+
+    if (sampling_rate >= 1.0) {
+        evaluated_demands = demands;
+    } else {
+        evaluated_demands.reserve(
+            static_cast<size_t>(demands.size() * sampling_rate));
+
+        std::sample(
+            demands.begin(),
+            demands.end(),
+            std::back_inserter(evaluated_demands),
+            static_cast<size_t>(demands.size() * sampling_rate),
+            Random_Engine::get_engine());
+    }
+
+    // 評価
     if (mode == MODE_MINSUM) {
         objective = 0.0;
-        for (const auto& demand : this->net_sgflp.get_demands()) {
+        for (const auto& demand : evaluated_demands) {
             objective += this->net_sgflp.calculate_cost(demand).second;
         }
+
+        // double full_objective = 0.0;
+        // for (const auto& demand : demands) {
+        //     full_objective += this->net_sgflp.calculate_cost(demand).second;
+        // }
+
+        // std::cout << "Evaluated objective: " << objective / sampling_rate << std::endl;
+        // std::cout << "Full objective: " << full_objective << std::endl;
+        // std::cout << "Error rate: " << std::abs(objective / sampling_rate - full_objective) / full_objective * 100 << "%" << std::endl;
+        // std::cout << std::endl;
+
     } else if (mode == MODE_MINMAX) {
         objective = 0.0;
         std::vector<double> costs;
-        for (const auto& demand : this->net_sgflp.get_demands()) {
+        for (const auto& demand : evaluated_demands) {
             costs.push_back(this->net_sgflp.calculate_cost(demand).second);
         }
         objective = *std::max_element(costs.begin(), costs.end());
@@ -196,8 +230,7 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
 }
 
 std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> SGFLP_SA::generate_neighbor_function_with_jump(
-    const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> facilities_and_signs, 
-    const double jump_rate
+    const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> facilities_and_signs
 ) const {
     std::vector<Net_2::vertex_descriptor> demands = this->net_sgflp.get_demands();
     

@@ -44,10 +44,15 @@ class SGFLP_SA {
         static constexpr size_t MODE_MINSUM = 0;    // ミニサムモード
         static constexpr size_t MODE_MINMAX = 1;    // ミニマックスモード
 
+        double jump_rate;       // 近傍解生成関数で、ジャンプする割合
+        double sampling_rate;   // 評価関数で、サンプリングする割合
+
         Net_SGFLP net_sgflp;
 
         //** Constructor **//
-        SGFLP_SA(Net_SGFLP net_sgflp);
+        SGFLP_SA(Net_SGFLP net_sgflp, 
+                 double jump_rate=0.1, 
+                 double sampling_rate=1.0);
 
         //** Objective Function Method **//
         /*************************************************
@@ -76,12 +81,10 @@ class SGFLP_SA {
          * @brief 近傍生成関数（ジャンプあり）
          * 
          * @param facilities_and_signs 
-         * @param jump_rate 
          * @return std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> 
          *************************************************/
         std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> generate_neighbor_function_with_jump(
-            const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> facilities_and_signs, 
-            const double jump_rate=0.1
+            const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> facilities_and_signs
         ) const;
 
 };

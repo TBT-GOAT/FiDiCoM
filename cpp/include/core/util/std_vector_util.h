@@ -63,35 +63,44 @@ int find_index(const std::vector<T>& vec, const T& item) {
 
 template <typename T>
 std::vector<T> random_sampling(const std::vector<T>& vec, const size_t sample_size, const bool with_replacement) {
+    
+    if (vec.empty()) {
+        if (sample_size == 0) return {};
+        throw std::invalid_argument("Cannot sample from an empty vector.");
+    }
+
+    if (!with_replacement && sample_size > vec.size()) {
+        throw std::invalid_argument(
+            "sample_size must be <= vec.size() when sampling without replacement."
+        );
+    }
+
     // ランダムエンジンを準備
+    auto& engine = Random_Engine::get_engine();
     std::uniform_int_distribution<> dist(0, vec.size() - 1);
 
-    std::vector<size_t> indices;
-
     // ランダムなインデックスを選択
+    std::vector<T> sampled;
+    sampled.reserve(sample_size);
     if (with_replacement) {
         // 重複あり
-        while (indices.size() < sample_size) {
-            indices.push_back(dist(Random_Engine::get_engine()));
+        for (size_t i = 0; i < sample_size; ++i) {
+            sampled.push_back(vec[dist(engine)]);
         }
     } else {
         // 重複なし
-        std::unordered_set<size_t> indices_set;
-        while (indices_set.size() < sample_size) {
-            indices_set.insert(dist(Random_Engine::get_engine()));
+        std::unordered_set<size_t> selected_indices;
+        selected_indices.reserve(sample_size);
+
+        while (selected_indices.size() < sample_size) {
+            selected_indices.insert(dist(engine));
         }
 
-        // 選択した要素を格納
-        for (const auto& index : indices_set) {
-            indices.push_back(index);
+        for (size_t index : selected_indices) {
+            sampled.push_back(vec[index]);
         }
     }
 
-    std::vector<T> sampled;
-    for (const auto& i : indices) {
-        sampled.push_back(vec.at(i));
-    }
-    
     return sampled;
 
 }

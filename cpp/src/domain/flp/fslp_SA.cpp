@@ -9,7 +9,10 @@
 #include <chrono>
 
 //** Constructor **//
-FSLP_SA::FSLP_SA(Net_FSLP net_fslp) : net_fslp(std::move(net_fslp)) {}
+FSLP_SA::FSLP_SA(Net_FSLP net_fslp, 
+                 double jump_rate, 
+                 double sampling_rate)
+     : net_fslp(std::move(net_fslp)), jump_rate(jump_rate), sampling_rate(sampling_rate) {}
 
 //** Objective Function Method **//
 double FSLP_SA::evaluate_function(
@@ -58,18 +61,37 @@ double FSLP_SA::evaluate_function(
     this->net_fslp.build_trees();
     this->net_fslp.build_assignments();
 
+    // 需要点のサンプリング
+    const auto& demands = this->net_fslp.get_demands();
+
+    std::vector<Net_2::vertex_descriptor> evaluated_demands;
+
+    if (sampling_rate >= 1.0) {
+        evaluated_demands = demands;
+    } else {
+        evaluated_demands.reserve(
+            static_cast<size_t>(demands.size() * sampling_rate));
+
+        std::sample(
+            demands.begin(),
+            demands.end(),
+            std::back_inserter(evaluated_demands),
+            static_cast<size_t>(demands.size() * sampling_rate),
+            Random_Engine::get_engine());
+    }
+
     // 目的関数の計算
     double objective;
 
     if (mode == MODE_MINSUM) {
         objective = 0.0;
-        for (const auto& demand : this->net_fslp.get_demands()) {
+        for (const auto& demand : evaluated_demands) {
             objective += this->net_fslp.calculate_cost(demand).second;
         }
     } else if (mode == MODE_MINMAX) {
         objective = 0.0;
         std::vector<double> costs;
-        for (const auto& demand : this->net_fslp.get_demands()) {
+        for (const auto& demand : evaluated_demands) {
             costs.push_back(this->net_fslp.calculate_cost(demand).second);
         }
         objective = *std::max_element(costs.begin(), costs.end());
@@ -171,8 +193,7 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
 }
 
 std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> FSLP_SA::generate_neighbor_function_with_jump(
-    const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> facilities_and_signs, 
-    const double jump_rate
+    const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> facilities_and_signs
 ) const {
     std::vector<Net_2::vertex_descriptor> demands = this->net_fslp.get_demands();
     

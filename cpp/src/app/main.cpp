@@ -3130,7 +3130,7 @@ int main(int argc, char *argv[]) {
                     net_sgflp.initialize_assignments();
 
                     Facilities_Signs_Pair initial_solution = std::make_pair(net_sgflp.get_facilities(), net_sgflp.get_signs());
-                    std::shared_ptr<SGFLP_SA> solver_ptr = std::make_shared<SGFLP_SA>(net_sgflp);
+                    std::shared_ptr<SGFLP_SA> solver_ptr = std::make_shared<SGFLP_SA>(net_sgflp, 0.1, 0.33);  //TODO サンプリング率の調整
 
                     Simulated_Annealing<std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>> sa(
                         init_temperature,
@@ -3642,7 +3642,7 @@ int main(int argc, char *argv[]) {
                     net_sgflp.initialize_assignments();
 
                     Facilities_Signs_Pair initial_solution = std::make_pair(net_sgflp.get_facilities(), net_sgflp.get_signs());
-                    std::shared_ptr<SGFLP_SA> solver_ptr = std::make_shared<SGFLP_SA>(net_sgflp);
+                    std::shared_ptr<SGFLP_SA> solver_ptr = std::make_shared<SGFLP_SA>(net_sgflp, 0.1, 0.33);
 
                     Simulated_Annealing<std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>> sa(
                         init_temperature,

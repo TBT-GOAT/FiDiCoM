@@ -49,6 +49,11 @@ class Net_SGFLP {
         Net_2::vertex_descriptor dummy_vertex_signs = UNINITIALIZED_DUMMY_VERTEX_SIGNS;             // サイン割当用ダミー頂点
         Net_2::vertex_descriptor dummy_vertex_anchors = UNINITIALIZED_DUMMY_VERTEX_ANCHORS;         // 拠点割当用ダミー頂点
         
+        size_t register_buffer {3}; // 最短経路木を登録するときのバッファサイズ（近傍解への推移に失敗したときに、元の解に速やかに戻れるようにするためのバッファ）
+        size_t registered_facility_num;  // 各種最短経路木を登録できるサービス供給点の数
+                                         // 評価の際、facilities が変更されてしまう
+                                         // 近傍解への推移に失敗したときに、元の解に速やかに戻れるよう
+                                         // バッファを設けてキャッシュする
         std::unordered_map<
             Net_2::vertex_descriptor, 
             std::vector<std::pair<Net_2::vertex_descriptor, double>>
@@ -59,6 +64,10 @@ class Net_SGFLP {
         > facility_shortest_path_trees {};                                                          // サービス供給点までの最短経路計算用
         std::vector<std::pair<Net_2::vertex_descriptor, double>> facility_shortest_path_tree {};    // 最寄りのサービス供給点割当用最短経路木
         
+        size_t registered_sign_num;  // 各種最短経路木を登録できるサインの数
+                                     // 評価の際、signs が変更されてしまう
+                                     // 近傍解への推移に失敗したときに、元の解に速やかに戻れるよう
+                                     // バッファを設けてキャッシュする
         std::unordered_map<
             Net_2::vertex_descriptor, 
             std::vector<std::pair<Net_2::vertex_descriptor, double>>
@@ -69,6 +78,7 @@ class Net_SGFLP {
         > sign_shortest_path_trees {};                                                              // サインまでの最短経路計算用
         std::vector<std::pair<Net_2::vertex_descriptor, double>> sign_shortest_path_tree {};        // 最寄りのサイン割当用最短経路木
         
+        size_t registered_anchor_num;  // 各種最短経路木を登録できる拠点の数
         std::unordered_map<
             Net_2::vertex_descriptor, 
             std::vector<std::pair<Net_2::vertex_descriptor, double>>
@@ -83,7 +93,11 @@ class Net_SGFLP {
         std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> facility_assignment_to_demand;   // 需要点に対するサービス供給点の割当（キー：需要点，値：サービス供給点）
         std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> sign_assignment_to_demand;       // 需要点に対するサインの割当（キー：需要点，値：サイン）
         std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> anchor_assignment_to_demand;     // 需要点に対する拠点の割当（キー：需要点，値：拠点）
-        // 経路割当
+        // 割当＝可視のエンティティすべて
+        std::unordered_map<Net_2::vertex_descriptor, std::unordered_map<Net_2::vertex_descriptor, double>> visible_facilities_to_demand;    // 需要点に対するサービス供給点の割当（キー：需要点，値：可視なサービス供給点すべて）
+        std::unordered_map<Net_2::vertex_descriptor, std::unordered_map<Net_2::vertex_descriptor, double>> visible_signs_to_demand;         // 需要点に対するサインの割当（キー：需要点，値：可視なサインすべて）
+        std::unordered_map<Net_2::vertex_descriptor, std::unordered_map<Net_2::vertex_descriptor, double>> visible_anchors_to_demand;       // 需要点に対する拠点の割当（キー：需要点，値：可視な拠点すべて）
+        // 経路割当（エンティティ間の順序）
         std::vector<std::vector<Net_2::vertex_descriptor>> entity_groups;                               // サービス供給点、サイン、拠点をまとめたもの（可視距離行列のインデックスに対応）
         std::vector<std::vector<double>> visibility_distance_matrix;                                    // 可視距離行列
         std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> navigation_assignment;   // サービス供給点、または、拠点に至るまでの経路割当（キー：サイン，値：サービス供給点、サイン、または、拠点）
@@ -120,6 +134,11 @@ class Net_SGFLP {
          *************************************************/
         void remove_dummy_vertex_anchors();
         /*************************************************
+         * @brief サービス供給点に関連する最短経路木を構築する
+         * 
+         *************************************************/
+        void build_facility_related_trees();
+        /*************************************************
          * @brief サービス供給点から可視である範囲を計算するための最短経路木を構築する
          * 
          *************************************************/
@@ -134,6 +153,11 @@ class Net_SGFLP {
          * 
          *************************************************/
         void build_facility_shortest_path_tree();
+        /*************************************************
+         * @brief サインに関連する最短経路木を構築する
+         * 
+         *************************************************/
+        void build_sign_related_trees();
         /*************************************************
          * @brief サインから可視である範囲を計算するための最短経路木を構築する
          * 
@@ -150,6 +174,11 @@ class Net_SGFLP {
          *************************************************/
         void build_sign_shortest_path_tree();
         /*************************************************
+         * @brief 拠点に関連する最短経路木を構築する
+         * 
+         *************************************************/
+        void build_anchor_related_trees();
+        /*************************************************
          * @brief 拠点から可視である範囲を計算するための最短経路木を構築する
          * 
          *************************************************/
@@ -164,6 +193,11 @@ class Net_SGFLP {
          * 
          *************************************************/
         void build_anchor_shortest_path_tree();
+        /*************************************************
+         * @brief ダミーノードを根とする最短経路木をクリアする
+         * 
+         *************************************************/
+        void clear_shortest_path_tree();
         /*************************************************
          * @brief 最寄りの拠点までの経路を計算する
          * 
@@ -200,6 +234,28 @@ class Net_SGFLP {
         
         //** Constraint Method **//
         /*************************************************
+         * @brief 需要点に可視である最寄りのサービス供給点を探索する
+         * 
+         * @param demand 
+         * @return std::pair<bool, Net_2::vertex_descriptor> 
+         *************************************************/
+        std::pair<bool, Net_2::vertex_descriptor> find_closest_visible_facility_to_demand(Net_2::vertex_descriptor demand) const;
+        /*************************************************
+         * @brief 需要点に可視である最寄りのサインを探索する
+         * 
+         * @param demand 
+         * @return std::pair<bool, Net_2::vertex_descriptor> 
+         *************************************************/
+        std::pair<bool, Net_2::vertex_descriptor> find_closest_visible_sign_to_demand(Net_2::vertex_descriptor demand) const;
+        /*************************************************
+         * @brief 需要点に可視である最寄りの拠点を探索する
+         * 
+         * @param demand 
+         * @return std::pair<bool, Net_2::vertex_descriptor> 
+         *************************************************/
+        std::pair<bool, Net_2::vertex_descriptor> find_closest_visible_anchor_to_demand(Net_2::vertex_descriptor demand) const;
+
+        /*************************************************
          * @brief 需要点に可視である最寄りのサービス供給点を割り当てる
          * 
          *************************************************/
@@ -214,6 +270,57 @@ class Net_SGFLP {
          * 
          *************************************************/
         void assign_anchor_to_demand();
+        /*************************************************
+         * @brief 需要点に可視である最寄りのサービス供給点を割り当てる
+         * 
+         *************************************************/
+        void assign_visible_facilities_to_demand();
+        /*************************************************
+         * @brief 需要点に可視である最寄りのサインを割り当てる
+         * 
+         *************************************************/
+        void assign_visible_signs_to_demand();
+        /*************************************************
+         * @brief 需要点に可視である最寄りの拠点を割り当てる
+         * 
+         *************************************************/
+        void assign_visible_anchors_to_demand();
+        /*************************************************
+        * @brief 需要点に可視であるサービス供給点を需要点に追加する
+        * 
+        * @param facility 
+        *************************************************/
+        void add_visible_facility_from_demands(Net_2::vertex_descriptor facility);
+        /*************************************************
+        * @brief 需要点に可視であるサインを需要点に追加する
+        * 
+        * @param sign 
+        *************************************************/
+        void add_visible_sign_from_demands(Net_2::vertex_descriptor sign);
+        /*************************************************
+        * @brief 需要点に可視である拠点を需要点に追加する
+        * 
+        * @param anchor 
+        *************************************************/
+        void add_visible_anchor_from_demands(Net_2::vertex_descriptor anchor);
+        /*************************************************
+        * @brief 需要点に可視であるサービス供給点を需要点から削除する
+        * 
+        * @param facility 
+        *************************************************/
+        void remove_visible_facility_from_demands(Net_2::vertex_descriptor facility);
+        /*************************************************
+        * @brief 需要点に可視であるサインを需要点から削除する
+        * 
+        * @param sign 
+        *************************************************/
+        void remove_visible_sign_from_demands(Net_2::vertex_descriptor sign);
+        /*************************************************
+        * @brief 需要点に可視である拠点を需要点から削除する
+        * 
+        * @param anchor 
+        *************************************************/
+        void remove_visible_anchor_from_demands(Net_2::vertex_descriptor anchor);
         /*************************************************
          * @brief 経路割当を実行する
          * 
@@ -297,6 +404,10 @@ class Net_SGFLP {
         std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> get_sign_assignment_to_demand() const;
         std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> get_anchor_assignment_to_demand() const;
 
+        std::unordered_map<Net_2::vertex_descriptor, std::unordered_map<Net_2::vertex_descriptor, double>> get_visible_facilities_to_demand() const;
+        std::unordered_map<Net_2::vertex_descriptor, std::unordered_map<Net_2::vertex_descriptor, double>> get_visible_signs_to_demand() const;
+        std::unordered_map<Net_2::vertex_descriptor, std::unordered_map<Net_2::vertex_descriptor, double>> get_visible_anchors_to_demand() const;
+
         std::vector<std::vector<Net_2::vertex_descriptor>> get_entity_groups() const;
         std::vector<std::vector<double>> get_visibility_distance_matrix() const;
         std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> get_navigation_assignment() const;
@@ -345,6 +456,11 @@ class Net_SGFLP {
          *************************************************/
         void build_trees();
         /*************************************************
+         * @brief 各種の割当用の最短経路木を構築する
+         * 
+         *************************************************/
+        void build_trees(bool is_facility_changed, bool is_sign_changed, bool is_anchor_changed);
+        /*************************************************
          * @brief 各種の割当用の最短経路木を削除する
          * 
          *************************************************/
@@ -389,6 +505,11 @@ class Net_SGFLP {
          *************************************************/
         void initialize_anchors(const std::vector<Point_2> anchor_points);
         /*************************************************
+         * @brief 最短経路木を初期化する
+         * 
+         *************************************************/
+        void initialize_trees();
+        /*************************************************
          * @brief 経路割当を初期化する
          * 
          *************************************************/
@@ -431,10 +552,34 @@ class Net_SGFLP {
          *************************************************/
         std::pair<bool, Net_2::vertex_descriptor> get_assigned_entity_on_navigation(Net_2::vertex_descriptor entity) const;
         /*************************************************
-         * @brief 各種の割当を実行する
+         * @brief 各種の割当を初期化する
          * 
          *************************************************/
-        void build_assignments();
+        void initialize_assignments();
+        /*************************************************
+         * @brief サービス供給点の割当を更新する
+         * 
+         * @param prev_facility_vertex 
+         * @param next_facility_vertex 
+         *************************************************/
+        void update_facility_assignment(Net_2::vertex_descriptor prev_facility_vertex, 
+                                        Net_2::vertex_descriptor next_facility_vertex);
+        /*************************************************
+         * @brief サインの割当を更新する    
+         * 
+         * @param prev_sign_vertex 
+         * @param next_sign_vertex 
+         *************************************************/
+        void update_sign_assignment(Net_2::vertex_descriptor prev_sign_vertex, 
+                                    Net_2::vertex_descriptor next_sign_vertex);
+        /*************************************************
+         * @brief 拠点の割当を更新する
+         * 
+         * @param prev_anchor_vertex 
+         * @param next_anchor_vertex 
+         *************************************************/
+        void update_anchor_assignment(Net_2::vertex_descriptor prev_anchor_vertex, 
+                                      Net_2::vertex_descriptor next_anchor_vertex);
         /*************************************************
          * @brief 割当をクリアする
          * 

@@ -1,6 +1,9 @@
 // include header
 #include "domain/flp/net_sgflp.h"
 
+// include STL
+#include <chrono>
+
 // include stl util
 #include "core/util/std_vector_util.h"
 #include "core/util/random_engine.h"
@@ -94,6 +97,15 @@ std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> Net_SGFLP
 std::unordered_map<Net_2::vertex_descriptor, Net_2::vertex_descriptor> Net_SGFLP::get_anchor_assignment_to_demand() const {
     return anchor_assignment_to_demand;
 }
+std::unordered_map<Net_2::vertex_descriptor, std::unordered_map<Net_2::vertex_descriptor, double>> Net_SGFLP::get_visible_facilities_to_demand() const {
+    return visible_facilities_to_demand;
+}
+std::unordered_map<Net_2::vertex_descriptor, std::unordered_map<Net_2::vertex_descriptor, double>> Net_SGFLP::get_visible_signs_to_demand() const {
+    return visible_signs_to_demand;
+}
+std::unordered_map<Net_2::vertex_descriptor, std::unordered_map<Net_2::vertex_descriptor, double>> Net_SGFLP::get_visible_anchors_to_demand() const {
+    return visible_anchors_to_demand;
+}
 std::vector<std::vector<Net_2::vertex_descriptor>> Net_SGFLP::get_entity_groups() const {
     return entity_groups;
 }
@@ -164,12 +176,52 @@ void Net_SGFLP::build_trees() {
     build_anchor_shortest_path_tree();
 }
 
-void Net_SGFLP::clear_trees() {
-    // facility_coverage_trees、sign_coverage_treesはキャッシュしておくため、clearしない
-    // facility_shortest_path_trees、sign_shortest_path_treesはキャッシュしておくため、clearしない
-    // anchorは不変のため、anchor_coverage_trees、anchor_shortest_path_trees、anchor_shortest_path_treeはclearしない
+void Net_SGFLP::build_trees(bool is_facility_changed, bool is_sign_changed, bool is_anchor_changed) {
+    if (is_facility_changed) {
+        build_facility_coverage_trees();
+        build_facility_shortest_path_trees();
+        build_facility_shortest_path_tree();
+    }
+    if (is_sign_changed) {
+        build_sign_coverage_trees();
+        build_sign_shortest_path_trees();
+        build_sign_shortest_path_tree();
+    }
+    if (is_anchor_changed) {
+        build_anchor_coverage_trees();
+        build_anchor_shortest_path_trees();
+        build_anchor_shortest_path_tree();
+    }
+}
+
+void Net_SGFLP::build_facility_related_trees() {
+    build_facility_coverage_trees();
+    build_facility_shortest_path_trees();
+    build_facility_shortest_path_tree();
+}
+
+void Net_SGFLP::build_sign_related_trees() {
+    build_sign_coverage_trees();
+    build_sign_shortest_path_trees();
+    build_sign_shortest_path_tree();
+}
+
+void Net_SGFLP::build_anchor_related_trees() {
+    build_anchor_coverage_trees();
+    build_anchor_shortest_path_trees();
+    build_anchor_shortest_path_tree();
+}
+
+void Net_SGFLP::clear_shortest_path_tree() {
+    // anchor は不変のため、anchor_shortest_path_tree は clear しない
     facility_shortest_path_tree.clear();
     sign_shortest_path_tree.clear();
+}
+
+void Net_SGFLP::clear_trees() {
+    // facility_coverage_trees、sign_coverage_trees、anchor_coverage_trees は build 時に更新されるため、clear しない
+    // facility_shortest_path_trees、sign_shortest_path_trees、anchor_shortest_path_trees は build 時に更新されるため、clear しない
+    clear_shortest_path_tree();
 }
 
 void Net_SGFLP::insert_dummy_vertex_facilities() {
@@ -294,7 +346,7 @@ void Net_SGFLP::build_facility_coverage_trees() {
     
     // 未登録のサービス供給点
     for (const auto& facility : this->facilities) {
-        if (this->facility_coverage_trees.find(facility) == this->facility_coverage_trees.end()) {       
+        if (this->facility_coverage_trees.find(facility) == this->facility_coverage_trees.end()) {   
             this->facility_coverage_trees[facility] = this->net_ptr->calculate_shortest_path_tree(facility, 
                                                                                                 Net_2::MODE_VISIBILITY, 
                                                                                                 false, 
@@ -306,6 +358,13 @@ void Net_SGFLP::build_facility_coverage_trees() {
     // サービス供給点でなくなったもの
     for (auto it = this->facility_coverage_trees.begin(); it != this->facility_coverage_trees.end(); ) {
         if (std::find(this->facilities.begin(), this->facilities.end(), it->first) == this->facilities.end()) {
+            
+            if (this->facility_coverage_trees.size() <= this->registered_facility_num) {
+                // 登録数に余裕があればキャッシュしておく
+                ++it;
+                continue;
+            }
+            
             it = this->facility_coverage_trees.erase(it); // 削除
         } else {
             ++it;
@@ -321,7 +380,7 @@ void Net_SGFLP::build_facility_shortest_path_trees() {
     
     // 未登録のサービス供給点
     for (const auto& facility : this->facilities) {
-        if (this->facility_shortest_path_trees.find(facility) == this->facility_shortest_path_trees.end()) {       
+        if (this->facility_shortest_path_trees.find(facility) == this->facility_shortest_path_trees.end()) {    
             this->facility_shortest_path_trees[facility] = this->net_ptr->calculate_shortest_path_tree(facility, 
                                                                                                 Net_2::MODE_ROUTE, 
                                                                                                 true, 
@@ -333,6 +392,13 @@ void Net_SGFLP::build_facility_shortest_path_trees() {
     // サービス供給点でなくなったもの
     for (auto it = this->facility_shortest_path_trees.begin(); it != this->facility_shortest_path_trees.end(); ) {
         if (std::find(this->facilities.begin(), this->facilities.end(), it->first) == this->facilities.end()) {
+
+            if (this->facility_shortest_path_trees.size() <= this->registered_facility_num) {
+                // 登録数に余裕があればキャッシュしておく
+                ++it;
+                continue;
+            }
+
             it = this->facility_shortest_path_trees.erase(it); // 削除
         } else {
             ++it;
@@ -357,7 +423,7 @@ void Net_SGFLP::build_sign_coverage_trees() {
     
     // 未登録のサイン
     for (const auto& sign : this->signs) {
-        if (this->sign_coverage_trees.find(sign) == this->sign_coverage_trees.end()) {       
+        if (this->sign_coverage_trees.find(sign) == this->sign_coverage_trees.end()) {   
             this->sign_coverage_trees[sign] = this->net_ptr->calculate_shortest_path_tree(sign, 
                                                                                        Net_2::MODE_VISIBILITY, 
                                                                                        false, 
@@ -369,6 +435,13 @@ void Net_SGFLP::build_sign_coverage_trees() {
     // サインでなくなったもの
     for (auto it = this->sign_coverage_trees.begin(); it != this->sign_coverage_trees.end(); ) {
         if (std::find(this->signs.begin(), this->signs.end(), it->first) == this->signs.end()) {
+
+            if (this->sign_coverage_trees.size() <= this->registered_sign_num) {
+                // 登録数に余裕があればキャッシュしておく
+                ++it;
+                continue;
+            }
+
             it = this->sign_coverage_trees.erase(it); // 削除
         } else {
             ++it;
@@ -396,6 +469,13 @@ void Net_SGFLP::build_sign_shortest_path_trees() {
     // サインでなくなったもの
     for (auto it = this->sign_shortest_path_trees.begin(); it != this->sign_shortest_path_trees.end(); ) {
         if (std::find(this->signs.begin(), this->signs.end(), it->first) == this->signs.end()) {
+
+            if (this->sign_shortest_path_trees.size() <= this->registered_sign_num) {
+                // 登録数に余裕があればキャッシュしておく
+                ++it;
+                continue;
+            }
+            
             it = this->sign_shortest_path_trees.erase(it); // 削除
         } else {
             ++it;
@@ -420,7 +500,7 @@ void Net_SGFLP::build_anchor_coverage_trees() {
     
     // 未登録の拠点
     for (const auto& anchor : this->anchors) {
-        if (this->anchor_coverage_trees.find(anchor) == this->anchor_coverage_trees.end()) {       
+        if (this->anchor_coverage_trees.find(anchor) == this->anchor_coverage_trees.end()) {     
             this->anchor_coverage_trees[anchor] = this->net_ptr->calculate_shortest_path_tree(anchor, 
                                                                                        Net_2::MODE_VISIBILITY, 
                                                                                        false, 
@@ -432,6 +512,13 @@ void Net_SGFLP::build_anchor_coverage_trees() {
     // 拠点でなくなったもの
     for (auto it = this->anchor_coverage_trees.begin(); it != this->anchor_coverage_trees.end(); ) {
         if (std::find(this->anchors.begin(), this->anchors.end(), it->first) == this->anchors.end()) {
+
+            if (this->anchor_coverage_trees.size() <= this->registered_anchor_num) {
+                // 登録数に余裕があればキャッシュしておく
+                ++it;
+                continue;
+            }
+            
             it = this->anchor_coverage_trees.erase(it); // 削除
         } else {
             ++it;
@@ -459,6 +546,13 @@ void Net_SGFLP::build_anchor_shortest_path_trees() {
     // 拠点でなくなったもの
     for (auto it = this->anchor_shortest_path_trees.begin(); it != this->anchor_shortest_path_trees.end(); ) {
         if (std::find(this->anchors.begin(), this->anchors.end(), it->first) == this->anchors.end()) {
+
+            if (this->anchor_shortest_path_trees.size() <= this->registered_anchor_num) {
+                // 登録数に余裕があればキャッシュしておく
+                ++it;
+                continue;
+            }
+
             it = this->anchor_shortest_path_trees.erase(it); // 削除
         } else {
             ++it;
@@ -565,6 +659,8 @@ void Net_SGFLP::initialize_facilities(const std::vector<Point_2> facility_points
         );
     }    
 
+    this->registered_facility_num = this->facilities.size() + this->register_buffer;
+
 }
 
 void Net_SGFLP::initialize_facilities(const size_t facility_num) {
@@ -584,6 +680,8 @@ void Net_SGFLP::initialize_facilities(const size_t facility_num) {
         );
     }
 
+    this->registered_facility_num = this->facilities.size() + this->register_buffer;
+
 }
 
 void Net_SGFLP::initialize_signs(const std::vector<Point_2> sign_points) {
@@ -598,7 +696,9 @@ void Net_SGFLP::initialize_signs(const std::vector<Point_2> sign_points) {
             "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
         );
     }
-    
+
+    this->registered_sign_num = this->signs.size() + this->register_buffer;
+
 }
 
 void Net_SGFLP::initialize_signs(const size_t sign_num) {
@@ -617,6 +717,8 @@ void Net_SGFLP::initialize_signs(const size_t sign_num) {
             "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
         );
     }
+
+    this->registered_sign_num = this->signs.size() + this->register_buffer;
     
 }
 
@@ -633,6 +735,12 @@ void Net_SGFLP::initialize_anchors(const std::vector<Point_2> anchor_points) {
         );
     }
 
+    this->registered_anchor_num = this->anchors.size() + this->register_buffer;
+
+}
+
+void Net_SGFLP::initialize_trees() {
+    build_trees();
 }
 
 void Net_SGFLP::initialize_entity_groups() {
@@ -678,71 +786,137 @@ void Net_SGFLP::initialize_visibility_distance_matrix() {
         std::vector<double>(entities.size(), INF)
     };
 
-    const auto get_coverage_tree = [&](const Net_2::vertex_descriptor entity)
-        -> const std::vector<std::pair<Net_2::vertex_descriptor, double>>& {
-        if (this->facility_coverage_trees.find(entity) != this->facility_coverage_trees.end()) {
-            return this->facility_coverage_trees.at(entity); // サービス供給点
-        }
-        if (this->sign_coverage_trees.find(entity) != this->sign_coverage_trees.end()) {
-            return this->sign_coverage_trees.at(entity); // サイン
-        }
-        if (this->anchor_coverage_trees.find(entity) != this->anchor_coverage_trees.end()) {
-            return this->anchor_coverage_trees.at(entity); // 拠点
-        }
-
-        throw std::runtime_error(
-            "Vantage entity has to be facility, sign or anchor.\n"
-            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
-        );
-    };
-
     // 可視距離の計算
     for (std::size_t i {0}; i < entities.size(); ++i) {
-        const Net_2::vertex_descriptor vantage_entity = entities.at(i);
-        const auto& vantage_coverage_tree =
-            get_coverage_tree(vantage_entity);
-
-        //TODO begin here ========================================
-        //TODO Net_2::calculate_visible_vertices と同じことをしているので、共通化できないか検討する
-        // 最短経路木を反転する
-        // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
-        std::unordered_map<Net_2::vertex_descriptor, std::vector<Net_2::vertex_descriptor>> vantage_coverage_tree_r;
-
-        for (std::size_t k {0}; k < vantage_coverage_tree.size(); ++k) {
-            const Net_2::vertex_descriptor parent = vantage_coverage_tree.at(k).first;
-            if (parent != k && parent != Net_2::null_vertex()) {
-                vantage_coverage_tree_r[parent].push_back(k);
-            }
-        }
-
-        // 可視である頂点を探索する
-        std::unordered_set<Net_2::vertex_descriptor> visible_vertices;
-
-        visible_vertices.insert(vantage_entity);
-        this->net_ptr->search_visible_vertices(vantage_entity, 
-                                            vantage_coverage_tree, 
-                                            vantage_coverage_tree_r,
-                                            visible_vertices, 
-                                            std::numeric_limits<double>::max()); // 経路割当の際は可視距離の制限なし
-        //TODO end here ========================================
-        
         for (std::size_t j {i}; j < entities.size(); ++j) {
+            
             if (i == j) {
                 // 同一の点は可視距離0
                 initial_visibility_distance_matrix.at(i).at(j) = 0.0;
-            } else {
-                Net_2::vertex_descriptor target_entity = entities.at(j);
+                continue;
+            }
 
-                if (visible_vertices.find(target_entity) != visible_vertices.end()) {
-                    // 可視である場合は距離を計算
-                    double vis_distance = vantage_coverage_tree.at(target_entity).second; // vantage_entityからtarget_entityへの可視距離
-                    initial_visibility_distance_matrix.at(i).at(j) = vis_distance;
-                    initial_visibility_distance_matrix.at(j).at(i) = vis_distance;
+            double visible_distance {0.0};
+            if (0 <= j && j <= this->entity_groups[0].size() - 1) {
+                // サービス供給点
+                if (this->visible_facilities_to_demand.find(entities.at(i)) == this->visible_facilities_to_demand.end()) {
+                    // いかなるサービス供給点から不可視
+                    continue;
+                } else {
+                    if (this->visible_facilities_to_demand.at(entities.at(i)).find(entities.at(j)) == this->visible_facilities_to_demand.at(entities.at(i)).end()) {
+                        // entities.at(i)からentities.at(j)は不可視
+                        continue;
+                    } else {
+                        visible_distance = this->visible_facilities_to_demand.at(entities.at(i)).at(entities.at(j));
+                        initial_visibility_distance_matrix.at(i).at(j) = visible_distance;
+                        initial_visibility_distance_matrix.at(j).at(i) = visible_distance;
+                    }
                 }
             }
-        }
-
+            else if (this->entity_groups[0].size() <= j && j <= this->entity_groups[0].size() + this->entity_groups[1].size() - 1) {
+                // サイン
+                if (this->visible_signs_to_demand.find(entities.at(i)) == this->visible_signs_to_demand.end()) {
+                    // いかなるサインから不可視
+                    continue;
+                } else {
+                    if (this->visible_signs_to_demand.at(entities.at(i)).find(entities.at(j)) == this->visible_signs_to_demand.at(entities.at(i)).end()) {
+                        // entities.at(i)からentities.at(j)は不可視
+                        continue;
+                    } else {
+                        visible_distance = this->visible_signs_to_demand.at(entities.at(i)).at(entities.at(j));
+                        initial_visibility_distance_matrix.at(i).at(j) = visible_distance;
+                        initial_visibility_distance_matrix.at(j).at(i) = visible_distance;
+                    }
+                }
+            }
+            else if (this->entity_groups[0].size() + this->entity_groups[1].size() <= j && j <= this->entity_groups[0].size() + this->entity_groups[1].size() + this->entity_groups[2].size() - 1) {
+                // 拠点
+                if (this->visible_anchors_to_demand.find(entities.at(i)) == this->visible_anchors_to_demand.end()) {
+                    // いかなる拠点から不可視
+                    continue;
+                } else {
+                    if (this->visible_anchors_to_demand.at(entities.at(i)).find(entities.at(j)) == this->visible_anchors_to_demand.at(entities.at(i)).end()) {
+                        // entities.at(i)からentities.at(j)は不可視
+                        continue;
+                    } else {
+                        visible_distance = this->visible_anchors_to_demand.at(entities.at(i)).at(entities.at(j));
+                        initial_visibility_distance_matrix.at(i).at(j) = visible_distance;
+                        initial_visibility_distance_matrix.at(j).at(i) = visible_distance;
+                    }
+                }
+            } else {
+                throw std::runtime_error(
+                    "Index out of range for entity groups.\n"
+                    "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+                );
+            }
+        }    
     }
+
+    // const auto get_coverage_tree = [&](const Net_2::vertex_descriptor entity)
+    //     -> const std::vector<std::pair<Net_2::vertex_descriptor, double>>& {
+    //     if (this->facility_coverage_trees.find(entity) != this->facility_coverage_trees.end()) {
+    //         return this->facility_coverage_trees.at(entity); // サービス供給点
+    //     }
+    //     if (this->sign_coverage_trees.find(entity) != this->sign_coverage_trees.end()) {
+    //         return this->sign_coverage_trees.at(entity); // サイン
+    //     }
+    //     if (this->anchor_coverage_trees.find(entity) != this->anchor_coverage_trees.end()) {
+    //         return this->anchor_coverage_trees.at(entity); // 拠点
+    //     }
+
+    //     throw std::runtime_error(
+    //         "Vantage entity has to be facility, sign or anchor.\n"
+    //         "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+    //     );
+    // };
+
+    // for (std::size_t i {0}; i < entities.size(); ++i) {
+    //     const Net_2::vertex_descriptor vantage_entity = entities.at(i);
+    //     const auto& vantage_coverage_tree =
+    //         get_coverage_tree(vantage_entity);
+
+    //     //TODO begin here ========================================
+    //     //TODO Net_2::calculate_visible_vertices と同じことをしているので、共通化できないか検討する
+    //     // 最短経路木を反転する
+    //     // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
+    //     std::unordered_map<Net_2::vertex_descriptor, std::vector<Net_2::vertex_descriptor>> vantage_coverage_tree_r;
+
+    //     for (std::size_t k {0}; k < vantage_coverage_tree.size(); ++k) {
+    //         const Net_2::vertex_descriptor parent = vantage_coverage_tree.at(k).first;
+    //         if (parent != k && parent != Net_2::null_vertex()) {
+    //             vantage_coverage_tree_r[parent].push_back(k);
+    //         }
+    //     }
+
+    //     // 可視である頂点を探索する
+    //     std::unordered_set<Net_2::vertex_descriptor> visible_vertices;
+
+    //     visible_vertices.insert(vantage_entity);
+    //     this->net_ptr->search_visible_vertices(vantage_entity, 
+    //                                         vantage_coverage_tree, 
+    //                                         vantage_coverage_tree_r,
+    //                                         visible_vertices, 
+    //                                         std::numeric_limits<double>::max()); // 経路割当の際は可視距離の制限なし
+    //     //TODO end here ========================================
+        
+    //     for (std::size_t j {i}; j < entities.size(); ++j) {
+    //         if (i == j) {
+    //             // 同一の点は可視距離0
+    //             initial_visibility_distance_matrix.at(i).at(j) = 0.0;
+    //         } else {
+    //             Net_2::vertex_descriptor target_entity = entities.at(j);
+
+    //             if (visible_vertices.find(target_entity) != visible_vertices.end()) {
+    //                 // 可視である場合は距離を計算
+    //                 double vis_distance = vantage_coverage_tree.at(target_entity).second; // vantage_entityからtarget_entityへの可視距離
+    //                 initial_visibility_distance_matrix.at(i).at(j) = vis_distance;
+    //                 initial_visibility_distance_matrix.at(j).at(i) = vis_distance;
+    //             }
+    //         }
+    //     }
+
+    // }
 
     // facilitiesとanchorを結ぶダミーノードを追加
     for (std::size_t i {0}; i < initial_visibility_distance_matrix.size(); ++i) {
@@ -767,10 +941,9 @@ void Net_SGFLP::initialize_visibility_distance_matrix() {
 
 void Net_SGFLP::initialize_navigation_assignment() {
     this->navigation_assignment.clear();
-
+    
     this->initialize_entity_groups();
     this->initialize_visibility_distance_matrix();
-
     this->assign_navigation();
     
 }
@@ -813,7 +986,95 @@ std::pair<bool, Net_2::vertex_descriptor> Net_SGFLP::get_assigned_entity_on_navi
     }
 }
 
-void Net_SGFLP::build_assignments() {
+std::pair<bool, Net_2::vertex_descriptor> Net_SGFLP::find_closest_visible_facility_to_demand(Net_2::vertex_descriptor demand) const {
+    auto demand_it = this->visible_facilities_to_demand.find(demand);
+    if (demand_it == this->visible_facilities_to_demand.end() || demand_it->second.empty()) {
+        return std::make_pair(false, 0);
+    }
+
+    bool found = false;
+    Net_2::vertex_descriptor closest_facility = 0;
+    double min_distance = std::numeric_limits<double>::max();
+
+    for (const auto& facility_and_distance : demand_it->second) {
+        const Net_2::vertex_descriptor facility = facility_and_distance.first;
+        const double distance = facility_and_distance.second;
+
+        if (distance <= this->facility_visible_length && distance < min_distance) {
+            found = true;
+            closest_facility = facility;
+            min_distance = distance;
+        }
+    }
+
+    if (!found) {
+        return std::make_pair(false, 0);
+    }
+
+    return std::make_pair(true, closest_facility);
+}
+
+std::pair<bool, Net_2::vertex_descriptor> Net_SGFLP::find_closest_visible_sign_to_demand(Net_2::vertex_descriptor demand) const {
+    auto demand_it = this->visible_signs_to_demand.find(demand);
+    if (demand_it == this->visible_signs_to_demand.end() || demand_it->second.empty()) {
+        return std::make_pair(false, 0);
+    }
+
+    bool found = false;
+    Net_2::vertex_descriptor closest_sign = 0;
+    double min_distance = std::numeric_limits<double>::max();
+
+    for (const auto& sign_and_distance : demand_it->second) {
+        const Net_2::vertex_descriptor sign = sign_and_distance.first;
+        const double distance = sign_and_distance.second;
+
+        if (distance <= this->sign_visible_length && distance < min_distance) {
+            found = true;
+            closest_sign = sign;
+            min_distance = distance;
+        }
+    }
+
+    if (!found) {
+        return std::make_pair(false, 0);
+    }
+
+    return std::make_pair(true, closest_sign);
+}
+
+std::pair<bool, Net_2::vertex_descriptor> Net_SGFLP::find_closest_visible_anchor_to_demand(Net_2::vertex_descriptor demand) const {
+    auto demand_it = this->visible_anchors_to_demand.find(demand);
+    if (demand_it == this->visible_anchors_to_demand.end() || demand_it->second.empty()) {
+        return std::make_pair(false, 0);
+    }
+
+    bool found = false;
+    Net_2::vertex_descriptor closest_anchor = 0;
+    double min_distance = std::numeric_limits<double>::max();
+
+    for (const auto& anchor_and_distance : demand_it->second) {
+        const Net_2::vertex_descriptor anchor = anchor_and_distance.first;
+        const double distance = anchor_and_distance.second;
+
+        if (distance <= this->anchor_visible_length && distance < min_distance) {
+            found = true;
+            closest_anchor = anchor;
+            min_distance = distance;
+        }
+    }
+
+    if (!found) {
+        return std::make_pair(false, 0);
+    }
+
+    return std::make_pair(true, closest_anchor);
+}
+
+void Net_SGFLP::initialize_assignments() {
+    assign_visible_facilities_to_demand();
+    assign_visible_signs_to_demand();
+    assign_visible_anchors_to_demand();
+
     assign_facility_to_demand();
     assign_sign_to_demand();
     assign_anchor_to_demand();
@@ -822,10 +1083,35 @@ void Net_SGFLP::build_assignments() {
 
 }
 
+void Net_SGFLP::update_facility_assignment(Net_2::vertex_descriptor prev_facility_vertex, 
+                                           Net_2::vertex_descriptor next_facility_vertex) {
+    this->remove_visible_facility_from_demands(prev_facility_vertex);
+    this->add_visible_facility_from_demands(next_facility_vertex);
+    this->assign_facility_to_demand();
+}
+
+void Net_SGFLP::update_sign_assignment(Net_2::vertex_descriptor prev_sign_vertex, 
+                                       Net_2::vertex_descriptor next_sign_vertex) {
+    this->remove_visible_sign_from_demands(prev_sign_vertex);
+    this->add_visible_sign_from_demands(next_sign_vertex);
+    this->assign_sign_to_demand();
+}
+
+void Net_SGFLP::update_anchor_assignment(Net_2::vertex_descriptor prev_anchor_vertex, 
+                                         Net_2::vertex_descriptor next_anchor_vertex) {
+    this->remove_visible_anchor_from_demands(prev_anchor_vertex);
+    this->add_visible_anchor_from_demands(next_anchor_vertex);
+    this->assign_anchor_to_demand();
+}
+
 void Net_SGFLP::clear_assignments() {
     facility_assignment_to_demand.clear();
     sign_assignment_to_demand.clear();
     anchor_assignment_to_demand.clear();
+
+    visible_facilities_to_demand.clear();
+    visible_signs_to_demand.clear();
+    visible_anchors_to_demand.clear();
 
     //TODO visibility_distance_matrix を clear せずに cache することも検討する
     entity_groups.clear();
@@ -835,166 +1121,181 @@ void Net_SGFLP::clear_assignments() {
 
 void Net_SGFLP::assign_facility_to_demand() {
     // サービス供給点の需要点に対する割当＝可視かつ最寄り
-    std::unordered_map<Net_2::vertex_descriptor, double> vis_min_lens {}; // サービス供給点までの可視長さ
-    for (const auto& facility : this->facilities) {
-        std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->facility_coverage_trees[facility];
-    
-        // 最短経路木を反転する
-        // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
-        std::unordered_map<Net_2::vertex_descriptor, std::vector<Net_2::vertex_descriptor>> assignment_tree_r;
-    
-        for (std::size_t i {0}; i < assignment_tree.size(); ++i) {
-            Net_2::vertex_descriptor parent = assignment_tree.at(i).first;
-            if (parent != i && parent != UNINITIALIZED_DUMMY_VERTEX_FACILITIES) {
-                assignment_tree_r[parent].push_back(i);
-            }
+    for (const auto& demand : this->demands) {
+        std::pair<bool, Net_2::vertex_descriptor> closest_visible_facility = find_closest_visible_facility_to_demand(demand);
+        if (closest_visible_facility.first) {
+            this->facility_assignment_to_demand[demand] = closest_visible_facility.second;
+        } else {
+            // 可視なサービス供給点がない場合は割当なし
+            this->facility_assignment_to_demand.erase(demand);
         }
-    
-        // サービス供給点を需要点に割当
-        // サービス供給点から見える頂点を探索
-        std::unordered_set<Net_2::vertex_descriptor> visible_vertices;
-        visible_vertices.insert(facility);
-        this->net_ptr->search_visible_vertices(facility, 
-                                                assignment_tree, 
-                                                assignment_tree_r,
-                                                visible_vertices, 
-                                                this->facility_visible_length);
-        
-        // 割当
-        for (const auto& visible_vertex : visible_vertices) {
-            if (find_index(this->demands, visible_vertex) != -1) {
-                // 可視である需要点
-                double vis_len = assignment_tree[visible_vertex].second; // 可視長さを取得
-                bool update = false;
-                if (this->facility_assignment_to_demand.find(visible_vertex) == this->facility_assignment_to_demand.end()) {
-                    // 未割当
-                    update = true;
-                } else if (vis_min_lens.find(visible_vertex) == vis_min_lens.end()) {
-                    // 可視長さの記録がない（初めて可視になる）
-                    update = true;
-                } else if (vis_len < vis_min_lens[visible_vertex]) {
-                    // 可視長さが短くなる
-                    update = true;
-                }
-
-                if (update) {
-                    this->facility_assignment_to_demand[visible_vertex] = facility;
-                    vis_min_lens[visible_vertex] = vis_len;
-                }
-            }
-        }
-
     }
-
 }
 
 void Net_SGFLP::assign_sign_to_demand() {
     // サインの需要点に対する割当＝可視かつ最寄り
-    std::unordered_map<Net_2::vertex_descriptor, double> vis_min_lens; // サービス供給点までの可視長さ
-    for (const auto& sign : this->signs) {
-        std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->sign_coverage_trees[sign];
-    
-        // 最短経路木を反転する
-        // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
-        std::unordered_map<Net_2::vertex_descriptor, std::vector<Net_2::vertex_descriptor>> assignment_tree_r;
-    
-        for (std::size_t i {0}; i < assignment_tree.size(); ++i) {
-            Net_2::vertex_descriptor parent = assignment_tree.at(i).first;
-            if (parent != i && parent != UNINITIALIZED_DUMMY_VERTEX_SIGNS) {
-                assignment_tree_r[parent].push_back(i);
-            }
+    for (const auto& demand : this->demands) {
+        std::pair<bool, Net_2::vertex_descriptor> closest_visible_sign = find_closest_visible_sign_to_demand(demand);
+        if (closest_visible_sign.first) {
+            this->sign_assignment_to_demand[demand] = closest_visible_sign.second;
+        } else {
+            // 可視なサインがない場合は割当なし
+            this->sign_assignment_to_demand.erase(demand);
         }
-    
-        // サインを需要点に割当
-        // サインから見える頂点を探索
-        std::unordered_set<Net_2::vertex_descriptor> visible_vertices;
-        visible_vertices.insert(sign);
-        this->net_ptr->search_visible_vertices(sign, 
-                                               assignment_tree, 
-                                               assignment_tree_r,
-                                               visible_vertices, 
-                                               this->sign_visible_length);
-        
-        // 割当
-        for (const auto& visible_vertex : visible_vertices) {
-            if (find_index(this->demands, visible_vertex) != -1) {
-                // 可視である需要点
-                double vis_len = assignment_tree[visible_vertex].second; // 可視長さを取得
-                bool update = false;
-                if (this->sign_assignment_to_demand.find(visible_vertex) == this->sign_assignment_to_demand.end()) {
-                    // 未割当
-                    update = true;
-                } else if (vis_min_lens.find(visible_vertex) == vis_min_lens.end()) {
-                    // 可視長さの記録がない（初めて可視になる）
-                    update = true;
-                } else if (vis_len < vis_min_lens[visible_vertex]) {
-                    // 可視長さが短くなる
-                    update = true;
-                }
-
-                if (update) {
-                    this->sign_assignment_to_demand[visible_vertex] = sign;
-                    vis_min_lens[visible_vertex] = vis_len;
-                }
-                
-            }
-        }
-
     }
 }
 
 void Net_SGFLP::assign_anchor_to_demand() {
     // 拠点の需要点に対する割当＝可視かつ最寄り
-    std::unordered_map<Net_2::vertex_descriptor, double> vis_min_lens; // サービス供給点までの可視長さ
+    for (const auto& demand : this->demands) {
+        std::pair<bool, Net_2::vertex_descriptor> closest_visible_anchor = find_closest_visible_anchor_to_demand(demand);
+        if (closest_visible_anchor.first) {
+            this->anchor_assignment_to_demand[demand] = closest_visible_anchor.second;
+        } else {
+            // 可視な拠点がない場合は割当なし
+            this->anchor_assignment_to_demand.erase(demand);
+        }
+    }
+}
+
+void Net_SGFLP::assign_visible_facilities_to_demand() {
+    this->visible_facilities_to_demand.clear();
+
+    // サービス供給点の需要点に対する割当＝可視
+    for (const auto& facility : this->facilities) {
+        this->add_visible_facility_from_demands(facility);
+    }
+
+}
+
+void Net_SGFLP::assign_visible_signs_to_demand() {
+    this->visible_signs_to_demand.clear();
+
+    // サインの需要点に対する割当＝可視
+    for (const auto& sign : this->signs) {
+        this->add_visible_sign_from_demands(sign);
+    }
+
+}
+
+void Net_SGFLP::assign_visible_anchors_to_demand() {
+    this->visible_anchors_to_demand.clear();
+
+    // 拠点の需要点に対する割当＝可視
     for (const auto& anchor : this->anchors) {
-        std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->anchor_coverage_trees[anchor];
-    
-        // 最短経路木を反転する
-        // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
-        std::unordered_map<Net_2::vertex_descriptor, std::vector<Net_2::vertex_descriptor>> assignment_tree_r;
-    
-        for (std::size_t i {0}; i < assignment_tree.size(); ++i) {
-            Net_2::vertex_descriptor parent = assignment_tree.at(i).first;
-            if (parent != i && parent != UNINITIALIZED_DUMMY_VERTEX_SIGNS) {
-                assignment_tree_r[parent].push_back(i);
-            }
-        }
-    
-        // 拠点を需要点に割当
-        // 拠点から見える頂点を探索
-        std::unordered_set<Net_2::vertex_descriptor> visible_vertices;
-        visible_vertices.insert(anchor);
-        this->net_ptr->search_visible_vertices(anchor, 
-                                               assignment_tree, 
-                                               assignment_tree_r,
-                                               visible_vertices, 
-                                               this->anchor_visible_length);
-        
-        // 割当
-        for (const auto& visible_vertex : visible_vertices) {
-            if (find_index(this->demands, visible_vertex) != -1) {
-                // 可視である需要点
-                double vis_len = assignment_tree[visible_vertex].second; // 可視長さを取得
-                bool update = false;
-                if (this->anchor_assignment_to_demand.find(visible_vertex) == this->anchor_assignment_to_demand.end()) {
-                    // 未割当
-                    update = true;
-                } else if (vis_min_lens.find(visible_vertex) == vis_min_lens.end()) {
-                    // 可視長さの記録がない（初めて可視になる）
-                    update = true;
-                } else if (vis_len < vis_min_lens[visible_vertex]) {
-                    // 可視長さが短くなる
-                    update = true;
-                }
+        this->add_visible_anchor_from_demands(anchor);
+    }
 
-                if (update) {
-                    this->anchor_assignment_to_demand[visible_vertex] = anchor;
-                    vis_min_lens[visible_vertex] = vis_len;
-                }
-                
-            }
-        }
+}
 
+void Net_SGFLP::add_visible_facility_from_demands(Net_2::vertex_descriptor facility) {
+    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->facility_coverage_trees[facility];
+
+    // 最短経路木を反転する
+    // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
+    std::unordered_map<Net_2::vertex_descriptor, std::vector<Net_2::vertex_descriptor>> assignment_tree_r;
+
+    for (std::size_t i {0}; i < assignment_tree.size(); ++i) {
+        Net_2::vertex_descriptor parent = assignment_tree.at(i).first;
+        if (parent != i && parent != UNINITIALIZED_DUMMY_VERTEX_FACILITIES) {
+            assignment_tree_r[parent].push_back(i);
+        }
+    }
+
+    // サービス供給点を需要点に割当
+    // サービス供給点から見える頂点を探索
+    std::unordered_set<Net_2::vertex_descriptor> visible_vertices;
+    visible_vertices.insert(facility);
+    this->net_ptr->search_visible_vertices(facility, 
+                                            assignment_tree, 
+                                            assignment_tree_r,
+                                            visible_vertices, 
+                                            // this->facility_visible_length);
+                                            Net_SGFLP::VISIBLE_LENGTH); // 不可視のものを排除する
+    
+    // 割当
+    for (const auto& visible_vertex : visible_vertices) {
+        this->visible_facilities_to_demand[visible_vertex][facility] = assignment_tree.at(visible_vertex).second;
+    }
+}
+
+void Net_SGFLP::add_visible_sign_from_demands(Net_2::vertex_descriptor sign) {
+    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->sign_coverage_trees[sign];
+
+    // 最短経路木を反転する
+    // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
+    std::unordered_map<Net_2::vertex_descriptor, std::vector<Net_2::vertex_descriptor>> assignment_tree_r;
+
+    for (std::size_t i {0}; i < assignment_tree.size(); ++i) {
+        Net_2::vertex_descriptor parent = assignment_tree.at(i).first;
+        if (parent != i && parent != UNINITIALIZED_DUMMY_VERTEX_SIGNS) {
+            assignment_tree_r[parent].push_back(i);
+        }
+    }
+
+    // サインを需要点に割当
+    // サインから見える頂点を探索
+    std::unordered_set<Net_2::vertex_descriptor> visible_vertices;
+    visible_vertices.insert(sign);
+    this->net_ptr->search_visible_vertices(sign, 
+                                            assignment_tree, 
+                                            assignment_tree_r,
+                                            visible_vertices, 
+                                            // this->sign_visible_length);
+                                            Net_SGFLP::VISIBLE_LENGTH); // 不可視のものを排除する
+    
+    // 割当
+    for (const auto& visible_vertex : visible_vertices) {
+        this->visible_signs_to_demand[visible_vertex][sign] = assignment_tree.at(visible_vertex).second;
+    }
+}
+
+void Net_SGFLP::add_visible_anchor_from_demands(Net_2::vertex_descriptor anchor) {
+    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->anchor_coverage_trees[anchor];
+
+    // 最短経路木を反転する
+    // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
+    std::unordered_map<Net_2::vertex_descriptor, std::vector<Net_2::vertex_descriptor>> assignment_tree_r;
+
+    for (std::size_t i {0}; i < assignment_tree.size(); ++i) {
+        Net_2::vertex_descriptor parent = assignment_tree.at(i).first;
+        if (parent != i && parent != UNINITIALIZED_DUMMY_VERTEX_ANCHORS) {
+            assignment_tree_r[parent].push_back(i);
+        }
+    }
+
+    // 拠点を需要点に割当
+    // 拠点から見える頂点を探索
+    std::unordered_set<Net_2::vertex_descriptor> visible_vertices;
+    visible_vertices.insert(anchor);
+    this->net_ptr->search_visible_vertices(anchor, 
+                                            assignment_tree, 
+                                            assignment_tree_r,
+                                            visible_vertices, 
+                                            // this->anchor_visible_length);
+                                            Net_SGFLP::VISIBLE_LENGTH); // 不可視のものを排除する
+    
+    // 割当
+    for (const auto& visible_vertex : visible_vertices) {
+        this->visible_anchors_to_demand[visible_vertex][anchor] = assignment_tree.at(visible_vertex).second;
+    }
+}
+
+void Net_SGFLP::remove_visible_facility_from_demands(Net_2::vertex_descriptor facility) {
+    for (auto& demand_and_facilities : this->visible_facilities_to_demand) {
+        demand_and_facilities.second.erase(facility);
+    }
+}
+
+void Net_SGFLP::remove_visible_sign_from_demands(Net_2::vertex_descriptor sign) {
+    for (auto& demand_and_signs : this->visible_signs_to_demand) {
+        demand_and_signs.second.erase(sign);
+    }
+}
+
+void Net_SGFLP::remove_visible_anchor_from_demands(Net_2::vertex_descriptor anchor) {
+    for (auto& demand_and_anchors : this->visible_anchors_to_demand) {
+        demand_and_anchors.second.erase(anchor);
     }
 }
 

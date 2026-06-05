@@ -149,9 +149,11 @@ class Simulated_Annealing {
 
                 // 解の更新
                 if (should_accept(current_cost, next_cost, temperature)) {
-                    // std::cout << "Accepted new solution with cost " << next_cost << " (delta: " << delta_cost << ", temperature: " << temperature << ")" << std::endl;
+                    // std::cout << "Accepted new solution with cost " << next_cost << " (current cost: " << current_cost << ", temperature: " << temperature << ")" << std::endl;
                     current_solution = next_solution;
                     current_cost = next_cost;
+                } else {
+                    // std::cout << "Rejected new solution with cost " << next_cost << " (current cost: " << current_cost << ", temperature: " << temperature << ")" << std::endl;
                 }
                 
                 temperature *= this->cooling_rate;

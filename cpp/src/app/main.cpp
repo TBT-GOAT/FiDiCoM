@@ -2435,7 +2435,6 @@ int main(int argc, char *argv[]) {
 
             break;
         }
-
         case 18: {
             // Sign-Guided Facility Location Problem のテスト
             std::cout << "===== Test of Sign-Guided Facility Location Problem =====" << std::endl;
@@ -2907,9 +2906,20 @@ int main(int argc, char *argv[]) {
                 size_t solution_id {seed * 1000000};
 
                 std::string seed_tag = "seed_" + std::to_string(seed);
-                std::ofstream parameter_table(output_data_folder + "parameters_" + seed_tag + ".csv");
-                std::ofstream result_table(output_data_folder + "experiment_results_" + seed_tag + ".csv");
-                std::ofstream solution_table(output_data_folder + "solutions_" + seed_tag + ".csv");
+                std::string parameter_table_path = output_data_folder + "parameters_" + seed_tag + ".csv";
+                std::string result_table_path = output_data_folder + "experiment_results_" + seed_tag + ".csv";
+                std::string solution_table_path = output_data_folder + "solutions_" + seed_tag + ".csv";
+
+                const bool parameter_table_has_data =
+                    std::filesystem::exists(parameter_table_path) && std::filesystem::file_size(parameter_table_path) > 0;
+                const bool result_table_has_data =
+                    std::filesystem::exists(result_table_path) && std::filesystem::file_size(result_table_path) > 0;
+                const bool solution_table_has_data =
+                    std::filesystem::exists(solution_table_path) && std::filesystem::file_size(solution_table_path) > 0;
+
+                std::ofstream parameter_table(parameter_table_path, std::ios::app);
+                std::ofstream result_table(result_table_path, std::ios::app);
+                std::ofstream solution_table(solution_table_path, std::ios::app);
                 
                 if (!parameter_table.is_open()) {
                     std::cerr << "Failed to open parameter_table\n";
@@ -2928,40 +2938,46 @@ int main(int argc, char *argv[]) {
                 solution_table << std::scientific
                             << std::setprecision(std::numeric_limits<double>::max_digits10);
 
-                parameter_table
-                    << "init_temperature,"
-                    << "cooling_rate,"
-                    << "max_iter,"
-                    << "mode,"
-                    << "rDn_size,"
-                    << "solution_id,"
-                    << "seed,"
-                    << "trial,"
-                    << "#facility,"
-                    << "vis_range_facility,"
-                    << "#sign,"
-                    << "vis_range_sign,"
-                    << "vis_range_anchor,"
-                    << std::endl;
+                if (!parameter_table_has_data) {
+                    parameter_table
+                        << "init_temperature,"
+                        << "cooling_rate,"
+                        << "max_iter,"
+                        << "mode,"
+                        << "rDn_size,"
+                        << "solution_id,"
+                        << "seed,"
+                        << "trial,"
+                        << "#facility,"
+                        << "vis_range_facility,"
+                        << "#sign,"
+                        << "vis_range_sign,"
+                        << "vis_range_anchor,"
+                        << std::endl;
+                }
 
-                result_table
-                    << "solution_id,"
-                    << "seed,"
-                    << "trial,"
-                    << "cost,"
-                    << "runtime"
-                    << std::endl;
+                if (!result_table_has_data) {
+                    result_table
+                        << "solution_id,"
+                        << "seed,"
+                        << "trial,"
+                        << "cost,"
+                        << "runtime"
+                        << std::endl;
+                }
 
-                solution_table
-                    << "solution_id,"
-                    << "seed,"
-                    << "trial,"
-                    << "type,"
-                    << "node_id,"
-                    << "x,"
-                    << "y,"
-                    << "z"
-                    << std::endl;
+                if (!solution_table_has_data) {
+                    solution_table
+                        << "solution_id,"
+                        << "seed,"
+                        << "trial,"
+                        << "type,"
+                        << "node_id,"
+                        << "x,"
+                        << "y,"
+                        << "z"
+                        << std::endl;
+                }
 
                 auto write_nodes = [](
                     std::ofstream& solution_table,

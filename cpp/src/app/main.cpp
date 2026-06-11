@@ -3207,8 +3207,6 @@ int main(int argc, char *argv[]) {
 
                 std::ofstream distribution_table(output_data_folder +
                                                     "distribution_" +
-                                                    std::to_string(seed) +
-                                                    "_" +
                                                     std::to_string(facility_num) +
                                                     "_" +
                                                     std::to_string(facility_visible_range) +

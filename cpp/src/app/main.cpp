@@ -3122,6 +3122,7 @@ int main(int argc, char *argv[]) {
                                 << ", trial=" << trial
                                 << " (already exists: " << current_distribution_file << ")" << std::endl;
 
+                    #pragma omp atomic update
                     ++finished_tasks;
                     continue;
                 }
@@ -3228,10 +3229,13 @@ int main(int argc, char *argv[]) {
                 net_sgflp.clear();
 
                 // 進行状況
-                size_t done;
+                size_t done;        // スキップを除く
+                size_t finished;    // スキップを含む
 
                 #pragma omp atomic capture
-                ++finished_tasks;
+                finished = ++finished_tasks;
+
+                #pragma omp atomic capture
                 done = ++executed_tasks;
 
                 auto now = std::chrono::steady_clock::now();
@@ -3239,7 +3243,7 @@ int main(int argc, char *argv[]) {
                     std::chrono::duration<double>(now - global_start).count();
 
                 double rate = done / elapsed;
-                double remaining = (executed_tasks - done) / rate;
+                double remaining = (total_tasks - finished) / rate;
 
                 #pragma omp critical
                 {

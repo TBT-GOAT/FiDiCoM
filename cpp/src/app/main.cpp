@@ -3064,6 +3064,7 @@ int main(int argc, char *argv[]) {
             size_t total_tasks = parameter_sets.size(); // パラメータセット数
 
             std::size_t finished_tasks = 0;
+            std::size_t executed_tasks = 0;
             auto global_start = std::chrono::steady_clock::now();
 
             //* 実行
@@ -3120,6 +3121,8 @@ int main(int argc, char *argv[]) {
                                 << ", anchor_visible_range=" << anchor_visible_range
                                 << ", trial=" << trial
                                 << " (already exists: " << current_distribution_file << ")" << std::endl;
+
+                    ++finished_tasks;
                     continue;
                 }
 
@@ -3228,19 +3231,20 @@ int main(int argc, char *argv[]) {
                 size_t done;
 
                 #pragma omp atomic capture
-                done = ++finished_tasks;
+                ++finished_tasks;
+                done = ++executed_tasks;
 
                 auto now = std::chrono::steady_clock::now();
                 double elapsed =
                     std::chrono::duration<double>(now - global_start).count();
 
                 double rate = done / elapsed;
-                double remaining = (total_tasks - done) / rate;
+                double remaining = (executed_tasks - done) / rate;
 
                 #pragma omp critical
                 {
                 std::cout << "\rProgress "
-                            << done << "/" << total_tasks
+                            << finished_tasks << "/" << total_tasks
                             << " | ETA "
                             << remaining/60 << " min"
                             << std::flush;

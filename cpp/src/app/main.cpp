@@ -2826,13 +2826,13 @@ int main(int argc, char *argv[]) {
 
 
             //* 焼きなまし法のハイパーパラメータの設定
-            double init_temperature = 1000000.0;    // 初期温度 //TODO 評価関数に応じてアジャスト
+            double init_temperature = 1.0e9;    // 初期温度 //TODO 評価関数に応じてアジャスト
             double cooling_rate = 0.999;            // 冷却率
             double max_iter = 1000;                 // 最大反復回数  //TODO 収束曲線を見てアジャスト
 
             //* 試行するパラメータセット
             size_t optim_mode = SGFLP_SA::MODE_MINSUM;
-            size_t rDn_size = 100000;               //TODO 平均エッジ長さに応じてアジャスト
+            size_t rDn_size = 200000;               //TODO 平均エッジ長さに応じてアジャスト
             std::vector<size_t> prepared_seeds {
                  17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73,
                  79, 83, 89, 97,101,103,107,109,113,127,131,137,139,149,151,
@@ -2841,7 +2841,7 @@ int main(int argc, char *argv[]) {
             };
             size_t trial_num = 5;
             std::vector<size_t> facility_nums = {0, 2, 4, 8};
-            std::vector<size_t> sign_nums = {0, 4, 16, 32};
+            std::vector<size_t> sign_nums = {0, 3, 9, 27};
             std::vector<double> facility_visible_ranges = {0.0, 15000.0, 30000.0, 60000.0};
             std::vector<double> sign_visible_ranges = {15000.0, 30000.0, 60000.0};
             std::vector<double> anchor_visible_ranges = {100000.0};

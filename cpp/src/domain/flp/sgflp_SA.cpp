@@ -12,8 +12,12 @@
 //** Constructor **//
 SGFLP_SA::SGFLP_SA(Net_SGFLP net_sgflp, 
                    double jump_rate, 
-                   double sampling_rate)
-     : net_sgflp(std::move(net_sgflp)), jump_rate(jump_rate), sampling_rate(sampling_rate) {}
+                   double sampling_rate,
+                   bool knowing_closest_anchor)
+         : net_sgflp(std::move(net_sgflp)),
+           jump_rate(jump_rate),
+           sampling_rate(sampling_rate),
+           knowing_closest_anchor(knowing_closest_anchor) {}
 
 //** Objective Function Method **//
 double SGFLP_SA::evaluate_function(
@@ -99,7 +103,7 @@ double SGFLP_SA::evaluate_function(
     if (mode == MODE_MINSUM) {
         objective = 0.0;
         for (const auto& demand : evaluated_demands) {
-            objective += this->net_sgflp.calculate_cost(demand).second;
+            objective += this->net_sgflp.calculate_cost(demand, this->knowing_closest_anchor).second;
         }
 
         // double full_objective = 0.0;
@@ -116,7 +120,7 @@ double SGFLP_SA::evaluate_function(
         objective = 0.0;
         std::vector<double> costs;
         for (const auto& demand : evaluated_demands) {
-            costs.push_back(this->net_sgflp.calculate_cost(demand).second);
+            costs.push_back(this->net_sgflp.calculate_cost(demand, this->knowing_closest_anchor).second);
         }
         objective = *std::max_element(costs.begin(), costs.end());
     } else {

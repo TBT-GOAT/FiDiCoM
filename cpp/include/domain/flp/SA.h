@@ -37,6 +37,7 @@
 #include <cmath>
 #include <chrono>
 #include <limits>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -44,13 +45,19 @@
 // include random engine
 #include "core/util/random_engine.h"
 
+struct Simulated_Annealing_Parameters {
+    double initial_temperature;
+    double cooling_rate;
+    size_t max_iteration;
+    size_t min_iteration {0};
+    size_t max_no_improvement {0};
+};
+
 template <typename Solution>
 class Simulated_Annealing {
     private:
 
-        double initial_temperature; // 初期温度
-        double cooling_rate;        // 冷却率
-        size_t max_iteration;       // 最大反復回数
+        Simulated_Annealing_Parameters parameters;
 
         std::function<double(const Solution&)> evaluate_function;               // 評価関数
         std::function<Solution(const Solution&)> generate_neighbor_function;    // 近傍解生成関数
@@ -138,16 +145,36 @@ class Simulated_Annealing {
         
         //** Constructor **//
         Simulated_Annealing(
+            Simulated_Annealing_Parameters parameters,
+            std::function<double(const Solution&)> evaluate_function,
+            std::function<Solution(const Solution&)> generate_neighbor_function
+        ) : parameters(parameters),
+            evaluate_function(evaluate_function),
+            generate_neighbor_function(generate_neighbor_function) {
+            if (this->parameters.min_iteration > this->parameters.max_iteration) {
+                throw std::invalid_argument("min_iteration must not exceed max_iteration");
+            }
+        }
+
+        // 旧バージョンのコンストラクタ
+        Simulated_Annealing(
             double initial_temperature,
             double cooling_rate,
             size_t max_iteration,
             std::function<double(const Solution&)> evaluate_function,
-            std::function<Solution(const Solution&)> generate_neighbor_function
-        ) : initial_temperature(initial_temperature),
-            cooling_rate(cooling_rate),
-            max_iteration(max_iteration),
-            evaluate_function(evaluate_function),
-            generate_neighbor_function(generate_neighbor_function) {}
+            std::function<Solution(const Solution&)> generate_neighbor_function,
+            size_t min_iteration = 0,
+            size_t max_no_improvement = 0
+        ) : Simulated_Annealing(
+                Simulated_Annealing_Parameters{
+                    initial_temperature,
+                    cooling_rate,
+                    max_iteration,
+                    min_iteration,
+                    max_no_improvement
+                },
+                evaluate_function,
+                generate_neighbor_function) {}
         
         /*************************************************
          * @brief 求解
@@ -167,10 +194,23 @@ class Simulated_Annealing {
             Solution current_solution = initial_solution;
             double best_cost = this->evaluate_function(initial_solution);
             double current_cost = best_cost;
-            double temperature = this->initial_temperature;
+            double temperature = this->parameters.initial_temperature;
+            size_t iterations_since_improvement {0};
             
-            for (size_t i {0}; i < this->max_iteration && temperature > MIN_TEMPERATURE; ++i) {
-                // std::cout << "Iteration: " << i + 1 << " / " << this->max_iteration << std::endl;
+            for (size_t i {0}; i < this->parameters.max_iteration; ++i) {
+                // 終了条件の確認
+                if (i >= this->parameters.min_iteration) {
+                    if (temperature <= MIN_TEMPERATURE) {
+                        // 温度が最小値以下になったか
+                        break;
+                    }
+                    if (this->parameters.max_no_improvement > 0 &&
+                        iterations_since_improvement >= this->parameters.max_no_improvement) {
+                        // 最大改善なし回数に達したか
+                        break;
+                    }
+                }
+                // std::cout << "Iteration: " << i + 1 << " / " << this->parameters.max_iteration << std::endl;
 
                 std::chrono::high_resolution_clock::time_point start_time = std::chrono::high_resolution_clock::now();
                 
@@ -186,6 +226,10 @@ class Simulated_Annealing {
                     // std::cout << "New best solution found! Cost improved from " << best_cost << " to " << next_cost << std::endl;
                     best_solution = next_solution;
                     best_cost = next_cost;
+                    iterations_since_improvement = 0; // 改善があったのでカウンタをリセット
+                } else {
+                    // 改善がなかったのでカウンタをインクリメント
+                    ++iterations_since_improvement;
                 }
 
                 // 解の更新
@@ -197,11 +241,11 @@ class Simulated_Annealing {
                     // std::cout << "Rejected new solution with cost " << next_cost << " (current cost: " << current_cost << ", temperature: " << temperature << ")" << std::endl;
                 }
                 
-                temperature *= this->cooling_rate;
+                temperature *= this->parameters.cooling_rate;
 
                 if (show_progress) {
                     if ((i + 1) % 100 == 0) {
-                        log_progress(i, max_iteration, temperature, current_cost, duration);
+                        log_progress(i, this->parameters.max_iteration, temperature, current_cost, duration);
                     }
                 }
 

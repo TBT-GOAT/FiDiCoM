@@ -2756,6 +2756,16 @@ int main(int argc, char *argv[]) {
             }
             omp_set_num_threads(thread_num);
 
+            std::string anchor_cost_mode;
+            do {
+                std::cout << "Select uncovered-demand anchor cost (best/average): ";
+                std::cin >> anchor_cost_mode;
+                if (anchor_cost_mode != "best" && anchor_cost_mode != "average") {
+                    std::cerr << "Invalid option. Enter 'best' or 'average'." << std::endl;
+                }
+            } while (anchor_cost_mode != "best" && anchor_cost_mode != "average");
+            const bool knowing_closest_anchor = anchor_cost_mode == "best";
+
             //* 入力情報の読み込み
             Polygon_2 domain;                                           // 対象領域
             std::vector<std::shared_ptr<Obstacle_2>> walls;             // 壁（通過不可、不可視）
@@ -2772,8 +2782,8 @@ int main(int argc, char *argv[]) {
             std::string inner_point_f_path = input_data_folder + "inner_point.cin";
 
             //* 出力先の設定
-            std::string log_data_folder = data_folder_path + "/log/";
-            std::string output_data_folder = data_folder_path + "/output/";
+            std::string log_data_folder = data_folder_path + "/log/" + anchor_cost_mode + "/";
+            std::string output_data_folder = data_folder_path + "/output/" + anchor_cost_mode + "/";
 
             if (!std::filesystem::exists(log_data_folder)) {
                 std::filesystem::create_directories(log_data_folder);
@@ -2826,9 +2836,13 @@ int main(int argc, char *argv[]) {
 
 
             //* 焼きなまし法のハイパーパラメータの設定
-            double init_temperature = 1.0e9;    // 初期温度 //TODO 評価関数に応じてアジャスト
-            double cooling_rate = 0.999;            // 冷却率
-            double max_iter = 1000;                 // 最大反復回数  //TODO 収束曲線を見てアジャスト
+            Simulated_Annealing_Parameters sa_parameters {
+                1.0e9,  // 初期温度 //TODO 評価関数に応じてアジャスト
+                0.995,  // 冷却率
+                2000,   // 最大反復回数 //TODO 収束曲線を見てアジャスト
+                1000,   // 最低反復回数
+                100     // 最大改善なし反復回数
+            };
 
             //* 試行するパラメータセット
             size_t optim_mode = SGFLP_SA::MODE_MINSUM;
@@ -2962,6 +2976,8 @@ int main(int argc, char *argv[]) {
                     << "init_temperature,"
                     << "cooling_rate,"
                     << "max_iter,"
+                    << "min_iter,"
+                    << "max_no_improvement,"
                     << "mode,"
                     << "rDn_size,"
                     << "seed,"
@@ -3044,7 +3060,10 @@ int main(int argc, char *argv[]) {
                     << std::endl;
 
                 for (const auto& demand : solver_ptr->net_sgflp.get_demands()) {
-                    std::pair<size_t, double> accessibility = solver_ptr->net_sgflp.calculate_cost(demand);
+                    std::pair<size_t, double> accessibility = solver_ptr->net_sgflp.calculate_cost(
+                        demand,
+                        solver_ptr->knowing_closest_anchor
+                    );
 
                     distribution_table
                         << solution_id << ","
@@ -3099,6 +3118,7 @@ int main(int argc, char *argv[]) {
                 // 実行済みならスキップ
                 std::string current_distribution_file = output_data_folder +
                                                         "distribution_" +
+                                                        anchor_cost_mode + "_" +
                                                         std::to_string(facility_num) +
                                                         "_" +
                                                         std::to_string(facility_visible_range) +
@@ -3143,12 +3163,15 @@ int main(int argc, char *argv[]) {
                 net_sgflp.initialize_assignments();
 
                 Facilities_Signs_Pair initial_solution = std::make_pair(net_sgflp.get_facilities(), net_sgflp.get_signs());
-                std::shared_ptr<SGFLP_SA> solver_ptr = std::make_shared<SGFLP_SA>(net_sgflp, 0.1, 0.33);  //TODO サンプリング率の調整
+                std::shared_ptr<SGFLP_SA> solver_ptr = std::make_shared<SGFLP_SA>(
+                    net_sgflp,
+                    0.1,
+                    0.33,
+                    knowing_closest_anchor
+                );  //TODO サンプリング率の調整
 
                 Simulated_Annealing<std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>> sa(
-                    init_temperature,
-                    cooling_rate,
-                    max_iter,
+                    sa_parameters,
                     [solver_ptr, optim_mode](const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> solution){
                         return solver_ptr->evaluate_function(solution, optim_mode);
                     },
@@ -3180,9 +3203,11 @@ int main(int argc, char *argv[]) {
                 {
                     parameter_table
                         << current_solution_id << ","
-                        << init_temperature << ","
-                        << cooling_rate << ","
-                        << max_iter << ","
+                        << sa_parameters.initial_temperature << ","
+                        << sa_parameters.cooling_rate << ","
+                        << sa_parameters.max_iteration << ","
+                        << sa_parameters.min_iteration << ","
+                        << sa_parameters.max_no_improvement << ","
                         << optim_mode << ","
                         << rDn_size << ","
                         << seed << ","
@@ -3211,6 +3236,7 @@ int main(int argc, char *argv[]) {
 
                 std::ofstream distribution_table(output_data_folder +
                                                     "distribution_" +
+                                                    anchor_cost_mode + "_" +
                                                     std::to_string(facility_num) +
                                                     "_" +
                                                     std::to_string(facility_visible_range) +

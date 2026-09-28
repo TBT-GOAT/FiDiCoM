@@ -596,6 +596,14 @@ class Net_SGFLP {
          *************************************************/
         std::pair<size_t, double> calculate_cost(Net_2::vertex_descriptor demand) const;
         /*************************************************
+         * @brief 需要点のコストを計算する（未割当時の拠点コストを選択）
+         * @param demand
+         * @param knowing_closest_anchor true の場合、最寄りの拠点へ向かうときのコストを使う
+         * @return std::pair<size_t, double> コストのパターン, コスト
+         *************************************************/
+        std::pair<size_t, double> calculate_cost(Net_2::vertex_descriptor demand,
+                             bool knowing_closest_anchor) const;
+        /*************************************************
          * @brief 見えている最寄りのサービス供給点に向かうときのコストを計算する
          * 
          * @param demand 
@@ -621,11 +629,20 @@ class Net_SGFLP {
                                                                    Net_2::vertex_descriptor anchor) const;
         /*************************************************
          * @brief どのエンティティも不可視の需要点からのコストを計算する
+         * 最初に向かう拠点は最寄りの拠点である
          * 
          * @param demand 
          * @return std::pair<size_t, double> 
          *************************************************/
-        std::pair<size_t, double> calculate_cost_from_uncovered_demand(Net_2::vertex_descriptor demand) const;
+        std::pair<size_t, double> calculate_best_cost_from_uncovered_demand(Net_2::vertex_descriptor demand) const;
+        /*************************************************
+         * @brief どのエンティティも不可視の需要点からのコストを計算する
+         * 最初に向かう拠点は一様ランダムに選ばれると仮定し、その平均的なコストを計算する
+         * 
+         * @param demand 
+         * @return std::pair<size_t, double> 
+         *************************************************/
+        std::pair<size_t, double> calculate_average_cost_from_uncovered_demand(Net_2::vertex_descriptor demand) const;
         /*************************************************
          * @brief 経路（o --> s --> t --> d）上の2頂点間のコストを計算する
          * 

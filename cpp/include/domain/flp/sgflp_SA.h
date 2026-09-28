@@ -46,13 +46,15 @@ class SGFLP_SA {
 
         double jump_rate;       // 近傍解生成関数で、ジャンプする割合
         double sampling_rate;   // 評価関数で、サンプリングする割合
+        bool knowing_closest_anchor; // 最も近い拠点を知っているかどうか
 
         Net_SGFLP net_sgflp;
 
         //** Constructor **//
         SGFLP_SA(Net_SGFLP net_sgflp, 
                  double jump_rate=0.1, 
-                 double sampling_rate=1.0);
+                 double sampling_rate=1.0,
+                 bool knowing_closest_anchor=true);
 
         //** Objective Function Method **//
         /*************************************************

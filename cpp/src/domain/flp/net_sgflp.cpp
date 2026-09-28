@@ -1412,6 +1412,11 @@ void Net_SGFLP::assign_navigation() {
 
 //** Cost Function Methods **//
 std::pair<size_t, double> Net_SGFLP::calculate_cost(Net_2::vertex_descriptor demand) const {
+    return calculate_cost(demand, false);
+}
+
+std::pair<size_t, double> Net_SGFLP::calculate_cost(Net_2::vertex_descriptor demand,
+                                                    bool knowing_closest_anchor) const {
     std::pair<bool, Net_2::vertex_descriptor> assigned_facility = this->get_assigned_facility_to_demand(demand);
     std::pair<bool, Net_2::vertex_descriptor> assigned_sign = this->get_assigned_sign_to_demand(demand);
     std::pair<bool, Net_2::vertex_descriptor> assigned_anchor = this->get_assigned_anchor_to_demand(demand);
@@ -1427,14 +1432,18 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost(Net_2::vertex_descriptor dem
         
         if (this->navigation_assignment.at(assigned_sign.second) == UNINITIALIZED_DUMMY_VERTEX_ENTITIES) {
             // サインの遷移先がない場合は、何も割り当てられていないことと同じ
-            return calculate_cost_from_uncovered_demand(demand);
+            return knowing_closest_anchor
+                ? calculate_best_cost_from_uncovered_demand(demand)
+                : calculate_average_cost_from_uncovered_demand(demand);
         }
         
         return calculate_cost_to_follow_signage(demand, assigned_sign.second);
         
     } else {
         // 何も割り当てられていない場合
-        return calculate_cost_from_uncovered_demand(demand);
+        return knowing_closest_anchor
+            ? calculate_best_cost_from_uncovered_demand(demand)
+            : calculate_average_cost_from_uncovered_demand(demand);
     }
 
 }
@@ -1575,7 +1584,7 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost_to_visible_anchor(Net_2::ver
 
 }
 
-std::pair<size_t, double> Net_SGFLP::calculate_cost_from_uncovered_demand(Net_2::vertex_descriptor demand) const {
+std::pair<size_t, double> Net_SGFLP::calculate_best_cost_from_uncovered_demand(Net_2::vertex_descriptor demand) const {
 
     // std::cout 
     // << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10) 
@@ -1586,10 +1595,10 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost_from_uncovered_demand(Net_2:
 
     // まず最初に、最寄りの拠点に向かう
     const std::vector<std::pair<Net_2::vertex_descriptor, double>>* assignment_tree = &this->anchor_shortest_path_tree;
-    std::deque<std::pair<Net_2::vertex_descriptor, double>> first_path_r = this->net_ptr->calculate_shortest_path(dummy_vertex_anchors, 
-                                                                                                                  demand, 
+    std::deque<std::pair<Net_2::vertex_descriptor, double>> first_path_r = this->net_ptr->calculate_shortest_path(dummy_vertex_anchors,
+                                                                                                                  demand,
                                                                                                                   *assignment_tree);
-    
+
     if (first_path_r.empty()) {
         throw std::runtime_error(
             "demand can not reach any anchor.\n"
@@ -1602,69 +1611,93 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost_from_uncovered_demand(Net_2:
     std::deque<std::pair<Net_2::vertex_descriptor, double>> first_path = first_path_r; // 経路を反転させる
     std::reverse(first_path.begin(), first_path.end());
 
-    // 経路上にエンティティを認識できる地点があるか確認する
-    Net_2::vertex_descriptor target_anchor = first_path.back().first; // 最寄りの拠点
-    std::tuple<int, Net_2::vertex_descriptor, Net_2::vertex_descriptor> waystop_existance = find_first_entity(first_path);
-    
-    int first_entity_type;
-    Net_2::vertex_descriptor way_stop;
-    Net_2::vertex_descriptor assigned_entity;
-    std::tie(first_entity_type, way_stop, assigned_entity) = waystop_existance;
-    
-    // 最初に認識するエンティティで場合分け
-    size_t _; 
+    const auto [first_entity_type, way_stop, assigned_entity] = find_first_entity(first_path);
+    size_t unused_pattern;
     double remaining_cost {0.0};
+
+    // 最初に見えるエンティティで場合分け
     switch (first_entity_type) {
-        case -1:
-            // std::cout << "\tNo waystop on the way to nearest anchor." << std::endl;        
-            cost = first_path.front().second - first_path.back().second; // 需要点から拠点までの距離
+        case -1:   
+            cost = first_path.front().second - first_path.back().second; // 需要点 --> 拠点
             return std::make_pair(COST_PATTERN_Duncovered, cost);
-            break;
         case 0:
-            // std::cout << "\tFirst entity on the way to nearest anchor is anchor " << way_stop << "." << std::endl;
-            
-            // 需要点から中継地点までの距離を加算する
-            cost += calculate_cost_on_path(demand, way_stop, first_path);
-            
-            // 中継地点からの距離を加算する
-            std::tie(_, remaining_cost) = calculate_cost_to_visible_anchor(way_stop, assigned_entity);
-            cost += remaining_cost;
-
-            return std::make_pair(COST_PATTERN_DoutA, cost);
-            
-            break;
+            cost = calculate_cost_on_path(demand, way_stop, first_path); // 需要点 --> 中継地点
+            std::tie(unused_pattern, remaining_cost) = calculate_cost_to_visible_anchor(way_stop, assigned_entity); // 中継地点 から 拠点 に向かう
+            return std::make_pair(COST_PATTERN_DoutA, cost + remaining_cost);
         case 1:
-            // std::cout << "\tFirst entity on the way to nearest anchor is facility " << way_stop << "." << std::endl;
-            
-            // 需要点から中継地点までの距離を加算する
-            cost += calculate_cost_on_path(demand, way_stop, first_path);
-
-            // 中継地点からの距離を加算する
-            std::tie(_, remaining_cost) = calculate_cost_to_visible_facility(way_stop, assigned_entity);
-            cost += remaining_cost;
-
-            return std::make_pair(COST_PATTERN_DoutF, cost);
-
-            break;
+            cost = calculate_cost_on_path(demand, way_stop, first_path); // 需要点 --> 中継地点
+            std::tie(unused_pattern, remaining_cost) = calculate_cost_to_visible_facility(way_stop, assigned_entity); // 中継地点 から サービス供給点 に向かう
+            return std::make_pair(COST_PATTERN_DoutF, cost + remaining_cost);
         case 2:
-            // std::cout << "\tFirst entity on the way to nearest anchor is sign " << way_stop << "." << std::endl;
-            
-            // 需要点から中継地点までの距離を加算する
-            cost += calculate_cost_on_path(demand, way_stop, first_path);
-
-            // 中継地点からの距離を加算する
-            std::tie(_, remaining_cost) = calculate_cost_to_follow_signage(way_stop, assigned_entity);
-            cost += remaining_cost;
-
-            return std::make_pair(COST_PATTERN_DoutS, cost);
-            
-            break;
+            cost = calculate_cost_on_path(demand, way_stop, first_path); // 需要点 --> 中継地点
+            std::tie(unused_pattern, remaining_cost) = calculate_cost_to_follow_signage(way_stop, assigned_entity); // 中継地点 から サイン に従う
+            return std::make_pair(COST_PATTERN_DoutS, cost + remaining_cost);
         default:
             throw std::runtime_error(
                 "Invalid entity type found on the way to nearest anchor.\n"
                 "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
             );
     }
+}
+
+std::pair<size_t, double> Net_SGFLP::calculate_average_cost_from_uncovered_demand(Net_2::vertex_descriptor demand) const {
+    double total_cost {0.0};
+    size_t reachable_anchor_num {0};
+
+    for (const auto& anchor : this->anchors) {
+        const auto& assignment_tree = this->anchor_shortest_path_trees.at(anchor);
+        std::deque<std::pair<Net_2::vertex_descriptor, double>> path =
+            this->net_ptr->calculate_shortest_path(anchor, demand, assignment_tree);
+        if (path.empty()) {
+            std::cout << "No path found from anchor " << anchor << " to demand " << demand << std::endl;
+            continue;
+        }
+
+        std::reverse(path.begin(), path.end());
+        const auto [first_entity_type, way_stop, assigned_entity] = find_first_entity(path);
+        double candidate_cost {0.0};
+        size_t unused_pattern;
+        double remaining_cost {0.0};
+        switch (first_entity_type) {
+            case -1:
+                candidate_cost = path.front().second - path.back().second; // 需要点 --> 拠点
+                break;
+            case 0:
+                candidate_cost = calculate_cost_on_path(demand, way_stop, path); // 需要点 --> 中継地点
+                std::tie(unused_pattern, remaining_cost) = calculate_cost_to_visible_anchor(way_stop, assigned_entity); // 中継地点 から 拠点 に向かう
+                candidate_cost += remaining_cost;
+                break;
+            case 1:
+                candidate_cost = calculate_cost_on_path(demand, way_stop, path); // 需要点 --> 中継地点
+                std::tie(unused_pattern, remaining_cost) = calculate_cost_to_visible_facility(way_stop, assigned_entity); // 中継地点 から サービス供給点 に向かう
+                candidate_cost += remaining_cost;
+                break;
+            case 2:
+                candidate_cost = calculate_cost_on_path(demand, way_stop, path); // 需要点 --> 中継地点
+                std::tie(unused_pattern, remaining_cost) = calculate_cost_to_follow_signage(way_stop, assigned_entity); // 中継地点 から サイン に従う
+                candidate_cost += remaining_cost;
+                break;
+            default:
+                throw std::runtime_error(
+                    "Invalid entity type found on the way to anchor.\n"
+                    "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+                );
+        }
+
+        total_cost += candidate_cost;
+        ++reachable_anchor_num;
+    }
+
+    if (reachable_anchor_num == 0) {
+        throw std::runtime_error(
+            "demand can not reach any anchor.\n"
+            "Error at " + std::string(__FILE__) + ":" + std::to_string(__LINE__)
+        );
+    }
+
+    // path_pattern は最寄りの拠点に向かう場合のものに揃える
+    const size_t path_pattern = calculate_path_from_uncovered_demand(demand).first;
+    return std::make_pair(path_pattern, total_cost / reachable_anchor_num);
     
 }
 

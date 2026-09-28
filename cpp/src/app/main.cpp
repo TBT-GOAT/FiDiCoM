@@ -2883,20 +2883,20 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            // スレッドごとにランダムドロネー網を準備
-            // 各スレッドに対応するシードを事前に割り当てる
-            //!あるパラメータセットに対して同じシードのランダムドロネー網が使われる可能性がある
-            std::vector<size_t> seeds(prepared_seeds.begin(), prepared_seeds.begin() + thread_num);
-            std::unordered_map<size_t, std::shared_ptr<Net_2>> rdn_ptrs;
-            #pragma omp parallel for schedule(dynamic)
-            for (const auto& seed : seeds) {
-                Random_Engine::set_seed(seed);
+            // スレッドごとに同一条件のランダムドロネー網を1つ準備し、全試行で再利用する
+            //!rDnに依存するばらつきを測ることはできない
+            const size_t rdn_seed = prepared_seeds.front();
+            std::vector<size_t> seeds(static_cast<size_t>(thread_num), rdn_seed);
+            std::vector<std::shared_ptr<Net_2>> rdn_ptrs(static_cast<size_t>(thread_num));
+            #pragma omp parallel for schedule(static)
+            for (int thread_id = 0; thread_id < thread_num; ++thread_id) {
+                Random_Engine::set_seed(rdn_seed);
                 auto& rng = Random_Engine::get_engine();
                 rDn_2 rdn(rDn_size, domain);
                 rdn.initialize(rng);
                 rdn.disconnect_edges(obstacles);
                 std::shared_ptr<Net_2> rdn_ptr = std::make_shared<rDn_2>(rdn);
-                rdn_ptrs[seed] = rdn_ptr;
+                rdn_ptrs.at(static_cast<size_t>(thread_id)) = rdn_ptr;
 
                 // 平均エッジ長の確認
                 double total_edge_length = 0.0;
@@ -2915,7 +2915,7 @@ int main(int argc, char *argv[]) {
                 double num_edges = boost::num_edges(*rdn_ptr);
                 double avg_edge_length = (num_edges > 0) ? total_edge_length / num_edges : 0.0;
 
-                std::cout << " rDn for seed " << seed
+                std::cout << " rDn for seed " << rdn_seed
                           << " is generated (avg_edge_length=" << avg_edge_length << ")" 
                           << std::endl;
             }
@@ -3094,7 +3094,7 @@ int main(int argc, char *argv[]) {
                 const size_t current_solution_id = seed * 1000000 + static_cast<size_t>(p_i) + 1;
 
                 // スレッドローカル乱数エンジンのシードを試行ごとに分離
-                Random_Engine::set_seed(static_cast<unsigned int>(solution_id));
+                Random_Engine::set_seed(static_cast<unsigned int>(current_solution_id));
 
                 // 実行済みならスキップ
                 std::string current_distribution_file = output_data_folder +
@@ -3128,7 +3128,7 @@ int main(int argc, char *argv[]) {
                 }
 
                 // ランダムドロネー網の読み込み
-                std::shared_ptr<Net_2> rdn_trial_ptr = rdn_ptrs[seed];
+                std::shared_ptr<Net_2> rdn_trial_ptr = rdn_ptrs.at(static_cast<size_t>(thread_id));
 
                 // ソルバの設定
                 Net_SGFLP net_sgflp(rdn_trial_ptr);

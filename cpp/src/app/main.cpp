@@ -3771,6 +3771,373 @@ int main(int argc, char *argv[]) {
             break;
         }
 
+        case 21: {
+            //** eCAADe Presentation **//
+            typedef std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> Facilities_Signs_Pair;
+
+            //* データフォルダの入力
+            std::string data_folder_path;
+            std::cout << "Enter the data folder path: ";
+            std::cin >> data_folder_path;
+
+            //* 入力情報の読み込み
+            Polygon_2 domain;                                           // 対象領域
+            std::vector<std::shared_ptr<Obstacle_2>> buildings;         // 建物（通過不可、不可視）
+            std::vector<std::shared_ptr<Obstacle_2>> barriers;          // 障壁（通過不可、可視）
+            std::vector<std::shared_ptr<Obstacle_2>> domain_segments;   // 対象領域の外形線
+            std::vector<Point_2> base_points;                           // ベースポイント
+            Point_2 inner_point;                                        // 対象領域内部にある点
+            std::vector<Point_2> default_AED_points;                    // 現状のAEDの座標
+
+            std::string input_data_folder = data_folder_path + "/input/";
+            std::string domain_f_path = input_data_folder + "domain.cin";
+            std::string buildings_f_path = input_data_folder + "buildings.cin";
+            std::string barriers_f_path = input_data_folder + "barriers.cin";
+            std::string basepoints_f_path = input_data_folder + "basepoints.cin";
+            std::string inner_point_f_path = input_data_folder + "inner_point.cin";
+            std::string default_AED_points_f_path = input_data_folder + "default_AED_points.cin";
+
+            // 対象領域
+            domain = Net_2::read_domain(domain_f_path);
+            
+            // 障害物
+            buildings = Obstacle_2::read_obstacles(buildings_f_path);
+            barriers = Obstacle_2::read_obstacles(barriers_f_path);
+            domain_segments = Obstacle_2::convert_polygon(domain, 
+                                            false, 
+                                            false, 
+                                            true, 
+                                            Obstacle_2::DOMAIN_NAME);
+
+            std::vector<std::shared_ptr<Obstacle_2>> obstacles;
+            obstacles.insert(obstacles.end(), buildings.begin(), buildings.end());
+            obstacles.insert(obstacles.end(), barriers.begin(), barriers.end());
+            obstacles.insert(obstacles.end(), domain_segments.begin(), domain_segments.end());
+
+            // ベースポイント
+            std::ifstream basepoints_file(basepoints_f_path);
+
+            if (!basepoints_file.is_open()) {
+                std::cerr << "Could not open the basepoints file!" << std::endl;
+            }
+
+            std::string bline;
+            double bx;
+            double by;
+            while (std::getline(basepoints_file, bline)) {
+                std::istringstream bline_stream(bline);
+                bline_stream >> bx >> by;
+                base_points.emplace_back(bx, by);
+            }
+            basepoints_file.close();
+
+            // 内部点
+            std::ifstream inner_point_file(inner_point_f_path);
+            double x, y;
+            inner_point_file >> x >> y;
+            inner_point = Point_2(x, y);
+            inner_point_file.close();
+
+            // 現状のAEDの座標
+            std::ifstream default_AED_points_file(default_AED_points_f_path);
+
+            if (!default_AED_points_file.is_open()) {
+                std::cerr << "Could not open the default AED points file!" << std::endl;
+            } 
+
+            std::string aline;
+            double ax;
+            double ay;
+            while (std::getline(default_AED_points_file, aline)) {
+                std::istringstream aline_stream(aline);
+                aline_stream >> ax >> ay;
+                default_AED_points.emplace_back(ax, ay);
+            }
+            default_AED_points_file.close();
+
+            //* 焼きなまし法のハイパーパラメータの設定
+            double init_temperature = 1.0e7;     // 初期温度
+            double cooling_rate = 0.999;          // 冷却率
+            double max_iter = 1000;               // 最大反復回数
+
+            //* 試行するパラメータセット
+            size_t optim_mode = FSLP_SA::MODE_MINSUM;
+            size_t rDn_size = 50000;
+            size_t seed = 17;
+            size_t AED_num = 5;  // AEDの数
+            double visible_range = 20000.0;
+            size_t trial = 0;
+
+            size_t solution_id = seed * 1000000 + trial + 1;
+            auto global_start = std::chrono::steady_clock::now();
+
+            //* 実行
+            Random_Engine::set_seed(seed);
+            auto& rng = Random_Engine::get_engine();
+
+            //* 出力の設定
+            bool show_progress = true;
+            bool logging = true;
+
+            std::string log_data_folder = data_folder_path + "/log/";
+            std::string output_data_folder = data_folder_path + "/output/";
+
+            std::filesystem::create_directories(log_data_folder);
+            std::filesystem::create_directories(output_data_folder);
+
+            std::string seed_tag = "seed_" + std::to_string(seed);
+            std::ofstream parameter_table(output_data_folder + "parameters_" + seed_tag + ".csv");
+            std::ofstream result_table(output_data_folder + "experiment_results_" + seed_tag + ".csv");
+            std::ofstream solution_table(output_data_folder + "solutions_" + seed_tag + ".csv");
+
+            parameter_table
+                << "init_temperature,"
+                << "cooling_rate,"
+                << "max_iter,"
+                << "mode,"
+                << "rDn_size,"
+                << "solution_id,"
+                << "seed,"
+                << "trial,"
+                << "#facility,"
+                << "vis_range_facility,"
+                << "#sign,"
+                << "vis_range_sign,"
+                << std::endl;
+
+            result_table
+                << "solution_id,"
+                << "seed,"
+                << "trial,"
+                << "cost,"
+                << "runtime"
+                << std::endl;
+
+            solution_table
+                << "solution_id,"
+                << "seed,"
+                << "trial,"
+                << "type,"
+                << "node_id,"
+                << "x,"
+                << "y,"
+                << "z"
+                << std::endl;
+
+            auto write_nodes = [](
+                std::ofstream& solution_table,
+                const std::shared_ptr<FSLP_SA> solver_ptr, 
+                const size_t solution_id,
+                                const size_t seed, 
+                                const int trial, 
+                                const std::string& type, 
+                const auto& container) 
+            {
+                for (const auto& id : container) {
+
+                    Node_2 node = *((*(solver_ptr->net_fslp.net_ptr))[id]);
+
+                    solution_table
+                        << solution_id << ","
+                        << seed << ","
+                        << trial << ","
+                        << type << ","
+                        << id << ","
+                        << node.x() << ","
+                        << node.y() << ","
+                        << "0.0"
+                        << std::endl;
+                }
+            };
+
+            // distribution table の書き出し関数
+            auto write_distribution = [&](
+                std::ofstream& distribution_table,
+                const std::shared_ptr<FSLP_SA> solver_ptr, 
+                const size_t solution_id,
+                const size_t seed, 
+                const int trial) 
+            {
+                distribution_table
+                    << "solution_id,"
+                    << "seed,"
+                    << "trial,"
+                    << "node_id,"
+                    << "x,"
+                    << "y,"
+                    << "z,"
+                    << "accessibility"
+                    << "pattern"
+                    << std::endl;
+
+                for (const auto& demand : solver_ptr->net_fslp.get_demands()) {
+                    std::pair<size_t, double> accessibility = solver_ptr->net_fslp.calculate_cost(demand);
+
+                    distribution_table
+                        << solution_id << ","
+                        << seed << ","
+                        << trial << ","
+                        << demand << ","
+                        << (*solver_ptr->net_fslp.net_ptr)[demand]->x() << ","
+                        << (*solver_ptr->net_fslp.net_ptr)[demand]->y() << ","
+                        << "0.0" << ","
+                        << accessibility.second << ","
+                        << accessibility.first
+                        << '\n';
+                }
+            };
+
+
+            // ランダムドロネー網の設定
+            rDn_2 rdn(rDn_size, domain);
+            rdn.initialize(rng);
+            rdn.disconnect_edges(obstacles);
+            std::shared_ptr<Net_2> rdn_ptr = std::make_shared<rDn_2>(rdn);
+
+            std::ofstream rdn_node_table(output_data_folder + "rdn_nodes_" + seed_tag + ".csv");
+            rdn_node_table
+                << "node_id,"
+                << "x,"
+                << "y,"
+                << "z"
+                << std::endl;
+            rdn_node_table << std::scientific
+                           << std::setprecision(std::numeric_limits<double>::max_digits10);
+            for (const auto& node_id : boost::make_iterator_range(boost::vertices(*rdn_ptr))) {
+                rdn_node_table
+                    << node_id << ","
+                    << (*rdn_ptr)[node_id]->x() << ","
+                    << (*rdn_ptr)[node_id]->y() << ","
+                    << "0.0"
+                    << std::endl;
+            }
+
+            // 平均エッジ長の計算
+            double total_edge_length = 0.0;
+            Net_2::edge_iterator eit, eit_end;
+            for (boost::tie(eit, eit_end) = boost::edges(*rdn_ptr); eit != eit_end; ++eit) {
+                auto src = boost::source(*eit, *rdn_ptr);
+                auto tgt = boost::target(*eit, *rdn_ptr);
+                auto src_p = (*rdn_ptr)[src];
+                auto tgt_p = (*rdn_ptr)[tgt];
+                double edge_length = std::sqrt(
+                    std::pow(src_p->x() - tgt_p->x(), 2) + 
+                    std::pow(src_p->y() - tgt_p->y(), 2)
+                );
+                total_edge_length += edge_length;
+            }
+            double num_edges = boost::num_edges(*rdn_ptr);
+            double avg_edge_length = (num_edges > 0) ? total_edge_length / num_edges : 0.0;
+
+            // 最適化
+            {
+                            
+                // 実行済みならスキップ
+                std::string current_distribution_file = output_data_folder + 
+                                                "distribution_" + 
+                                                std::to_string(seed) + 
+                                                "_" +
+                                                std::to_string(AED_num) + 
+                                                "_" +
+                                                std::to_string(visible_range) +
+                                                "_" +
+                                                std::to_string(trial) + 
+                                                ".csv";
+                
+                if (std::filesystem::exists(current_distribution_file)) {
+                    std::cout << "Skipping AED_num=" << AED_num 
+                                << ", visible_range=" << visible_range 
+                                << ", trial=" << trial 
+                                << " for seed " << seed 
+                                << " (already exists: " << current_distribution_file << ")" << std::endl;
+                    return EXIT_SUCCESS;
+                }
+                
+                // ソルバの設定                      
+                Net_FSLP net_fslp(rdn_ptr);
+                net_fslp.set_visible_length(visible_range);
+                net_fslp.set_demands(inner_point);
+                net_fslp.initialize_facilities(AED_num);
+                net_fslp.initialize_signs(0);
+                net_fslp.initialize_anchors(base_points);
+
+                Facilities_Signs_Pair initial_solution = std::make_pair(net_fslp.get_facilities(), net_fslp.get_signs());
+
+                std::shared_ptr<FSLP_SA> solver_ptr = std::make_shared<FSLP_SA>(net_fslp);
+
+                Simulated_Annealing<std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>> sa(
+                    init_temperature,    
+                    cooling_rate,      
+                    max_iter,       
+                    [solver_ptr, optim_mode](const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> solution){
+                        return solver_ptr->evaluate_function(solution, optim_mode);
+                    }, 
+                    [solver_ptr](const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>& current_solution){
+                        return solver_ptr->generate_neighbor_function_with_jump(current_solution);
+                    }
+                );
+
+                // 求解
+                std::string log_file_name = log_data_folder + "log_fslp_" + std::to_string(solution_id) + ".cout";
+                std::ofstream log_file(log_file_name);
+
+                auto start = std::chrono::high_resolution_clock::now();
+                Facilities_Signs_Pair best_solution = sa.solve(initial_solution, show_progress, logging, &log_file);
+                auto end = std::chrono::high_resolution_clock::now();
+
+                // 結果の記録
+                double cost = solver_ptr->evaluate_function(best_solution, optim_mode);
+                auto runtime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+                parameter_table
+                    << init_temperature << ","
+                    << cooling_rate << ","
+                    << max_iter << ","
+                    << optim_mode << ","
+                    << rDn_size << ","
+                    << solution_id << ","
+                    << seed << ","
+                    << trial << ","
+                    << AED_num << ","
+                    << visible_range << ","
+                    << 0 << ","
+                    << visible_range << ","
+                    << std::endl;
+                parameter_table.flush();
+
+                result_table
+                    << solution_id << ","
+                    << seed << ","
+                    << trial << ","
+                    << cost << ","
+                    << runtime
+                    << std::endl;
+                result_table.flush();
+
+                write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "facility", best_solution.first);
+                write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "sign", best_solution.second);
+                write_nodes(solution_table, solver_ptr, solution_id, seed, trial, "anchor", solver_ptr->net_fslp.get_anchors());
+
+                std::ofstream distribution_table(output_data_folder + 
+                                                "distribution_" + 
+                                                std::to_string(seed) + 
+                                                "_" +
+                                                std::to_string(AED_num) + 
+                                                "_" +
+                                                std::to_string(visible_range) +
+                                                "_" +
+                                                std::to_string(trial) + 
+                                                ".csv");
+                write_distribution(distribution_table, solver_ptr, solution_id, seed, trial);
+
+                // 設定をもとに戻す
+                net_fslp.clear();
+
+            }
+
+            break;
+        }
+
         default:
             break;
     }

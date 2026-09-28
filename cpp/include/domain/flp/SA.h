@@ -36,6 +36,10 @@
 #include <random>
 #include <cmath>
 #include <chrono>
+#include <limits>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 // include random engine
 #include "core/util/random_engine.h"
@@ -89,6 +93,43 @@ class Simulated_Annealing {
                           << ", Cost: " << current_cost
                           << ", Duration: " << duration << " millsec / iter" << std::endl;
             }
+        }
+
+        template <typename T>
+        static typename std::enable_if<std::is_floating_point<T>::value>::type log_solution_value(std::ostream& log_file, const T& value) {
+            std::streamsize previous_precision = log_file.precision();
+            std::ios_base::fmtflags previous_flags = log_file.flags();
+
+            log_file << std::defaultfloat << std::setprecision(std::numeric_limits<T>::max_digits10) << value;
+
+            log_file.precision(previous_precision);
+            log_file.flags(previous_flags);
+        }
+
+        template <typename T>
+        static typename std::enable_if<!std::is_floating_point<T>::value>::type log_solution_value(std::ostream& log_file, const T& value) {
+            log_file << value;
+        }
+
+        template <typename T>
+        static void log_solution_value(std::ostream& log_file, const std::vector<T>& values) {
+            log_file << "[";
+            for (size_t i {0}; i < values.size(); ++i) {
+                if (i > 0) {
+                    log_file << ",";
+                }
+                log_solution_value(log_file, values.at(i));
+            }
+            log_file << "]";
+        }
+
+        template <typename T, typename U>
+        static void log_solution_value(std::ostream& log_file, const std::pair<T, U>& value) {
+            log_file << "(";
+            log_solution_value(log_file, value.first);
+            log_file << ",";
+            log_solution_value(log_file, value.second);
+            log_file << ")";
         }
 
     public:
@@ -167,7 +208,12 @@ class Simulated_Annealing {
                 if (logging) {
                     *log_file_ptr 
                     << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10)
-                    << i << " " << temperature << " " << best_cost << " " << duration << std::endl;
+                    << i << " " << temperature << " " << best_cost << " " << current_cost << " " << duration
+                    << " best_solution=";
+                    log_solution_value(*log_file_ptr, best_solution);
+                    *log_file_ptr << " current_solution=";
+                    log_solution_value(*log_file_ptr, current_solution);
+                    *log_file_ptr << std::endl;
                 }
             
             }

@@ -48,7 +48,8 @@ double SGFLP_SA::evaluate_function(
         }
     }
 
-    //* ネットワークの更新
+    //* ネットワークと割当の更新
+    this->net_sgflp.clear_assignments();
     this->net_sgflp.clear_trees();
 
     // サービス供給点の変更を反映
@@ -70,17 +71,7 @@ double SGFLP_SA::evaluate_function(
     }
 
     this->net_sgflp.build_trees(is_facility_changed, is_sign_changed, false); // 拠点は変更なし
-
-    //* 割当を更新
-    for (const auto& updated_facility_vertex_pair : updated_facility_vertex_pairs) {
-        this->net_sgflp.update_facility_assignment(updated_facility_vertex_pair.first, updated_facility_vertex_pair.second);
-    }
-    
-    for (const auto& updated_sign_vertex_pair : updated_sign_vertex_pairs) {
-        this->net_sgflp.update_sign_assignment(updated_sign_vertex_pair.first, updated_sign_vertex_pair.second);
-    }
-    
-    this->net_sgflp.initialize_navigation_assignment();
+    this->net_sgflp.initialize_assignments();
 
     // 目的関数の計算
     double objective;

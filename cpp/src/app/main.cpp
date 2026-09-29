@@ -2926,11 +2926,15 @@ int main(int argc, char *argv[]) {
                     );
                     total_edge_length += edge_length;
                 }
+
+                size_t num_vertices = boost::num_vertices(*rdn_ptr);
                 double num_edges = boost::num_edges(*rdn_ptr);
                 double avg_edge_length = (num_edges > 0) ? total_edge_length / num_edges : 0.0;
 
                 std::cout << " rDn for seed " << rdn_seed
-                          << " is generated (avg_edge_length=" << avg_edge_length << ")" 
+                          << " is generated (num_vertices=" << num_vertices 
+                          << ", num_edges=" << num_edges 
+                          << ", avg_edge_length=" << avg_edge_length << ")" 
                           << std::endl;
             }
 

@@ -28,7 +28,7 @@ double SGFLP_SA::evaluate_function(
     // 割当の再構築
     const auto& new_facilities = facilities_and_signs.first;
     const auto& new_signs = facilities_and_signs.second;
-    // this->net_sgflp.rebuild_facility_and_sign_setting(new_facilities, new_signs);
+    // this->net_sgflp.rebuild_facility_and_sign_setting(new_facilities, new_signs); // 再構成バージョン。確実だが遅い。
     this->net_sgflp.update_facility_and_sign_setting(new_facilities, new_signs);
 
     // 目的関数の計算

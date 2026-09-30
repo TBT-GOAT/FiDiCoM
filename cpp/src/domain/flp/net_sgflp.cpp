@@ -3,6 +3,7 @@
 
 // include STL
 #include <chrono>
+#include <stdexcept>
 
 // include stl util
 #include "core/util/std_vector_util.h"
@@ -1189,7 +1190,7 @@ void Net_SGFLP::assign_visible_anchors_to_demand() {
 }
 
 void Net_SGFLP::add_visible_facility_from_demands(Net_2::vertex_descriptor facility) {
-    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->facility_coverage_trees.at(facility);
+    const auto& assignment_tree = this->facility_coverage_trees.at(facility);
 
     // 最短経路木を反転する
     // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
@@ -1220,7 +1221,7 @@ void Net_SGFLP::add_visible_facility_from_demands(Net_2::vertex_descriptor facil
 }
 
 void Net_SGFLP::add_visible_sign_from_demands(Net_2::vertex_descriptor sign) {
-    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->sign_coverage_trees.at(sign);
+    const auto& assignment_tree = this->sign_coverage_trees.at(sign);
 
     // 最短経路木を反転する
     // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
@@ -1251,7 +1252,7 @@ void Net_SGFLP::add_visible_sign_from_demands(Net_2::vertex_descriptor sign) {
 }
 
 void Net_SGFLP::add_visible_anchor_from_demands(Net_2::vertex_descriptor anchor) {
-    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->anchor_coverage_trees.at(anchor);
+    const auto& assignment_tree = this->anchor_coverage_trees.at(anchor);
 
     // 最短経路木を反転する
     // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
@@ -1413,16 +1414,20 @@ void Net_SGFLP::assign_navigation() {
 void Net_SGFLP::rebuild_facility_and_sign_setting(const std::vector<Net_2::vertex_descriptor>& new_facilities,
                                                   const std::vector<Net_2::vertex_descriptor>& new_signs) 
 {
+    if (new_facilities.size() != this->facilities.size() || new_signs.size() != this->signs.size()) {
+        throw std::invalid_argument("Facility and sign counts must remain unchanged during incremental updates.");
+    }
+
     //* サービス供給点，サインの変更を記録
     // サービス供給点の変更を記録
     bool is_facility_changed = false;
     std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_facility_vertex_pairs {};
     
-    for (size_t i {0}; i < this->get_facilities().size(); ++i) {
-        if (this->get_facilities().at(i) != new_facilities.at(i)) {
+    for (size_t i {0}; i < this->facilities.size(); ++i) {
+        if (this->facilities.at(i) != new_facilities.at(i)) {
             is_facility_changed = true;
             updated_facility_vertex_pairs.push_back(
-                std::make_pair(this->get_facilities().at(i), new_facilities.at(i))
+                std::make_pair(this->facilities.at(i), new_facilities.at(i))
             );
         }
     }
@@ -1431,11 +1436,11 @@ void Net_SGFLP::rebuild_facility_and_sign_setting(const std::vector<Net_2::verte
     bool is_sign_changed = false;
     std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_sign_vertex_pairs {};
     
-    for (size_t i {0}; i < this->get_signs().size(); ++i) {
-        if (this->get_signs().at(i) != new_signs.at(i)) {
+    for (size_t i {0}; i < this->signs.size(); ++i) {
+        if (this->signs.at(i) != new_signs.at(i)) {
             is_sign_changed = true;
             updated_sign_vertex_pairs.push_back(
-                std::make_pair(this->get_signs().at(i), new_signs.at(i))
+                std::make_pair(this->signs.at(i), new_signs.at(i))
             );
         }
     }
@@ -1472,15 +1477,19 @@ void Net_SGFLP::rebuild_facility_and_sign_setting(const std::vector<Net_2::verte
 void Net_SGFLP::update_facility_and_sign_setting(const std::vector<Net_2::vertex_descriptor>& new_facilities,
                                                  const std::vector<Net_2::vertex_descriptor>& new_signs)
 {
+    if (new_facilities.size() != this->facilities.size() || new_signs.size() != this->signs.size()) {
+        throw std::invalid_argument("Facility and sign counts must remain unchanged during incremental updates.");
+    }
+
     //* サービス供給点，サインの変更を記録
     // サービス供給点の変更を記録
     bool is_facility_changed = false;
     std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_facility_vertex_pairs {};
 
-    for (size_t i {0}; i < this->get_facilities().size(); ++i) {
-        if (this->get_facilities().at(i) != new_facilities.at(i)) {
+    for (size_t i {0}; i < this->facilities.size(); ++i) {
+        if (this->facilities.at(i) != new_facilities.at(i)) {
             is_facility_changed = true;
-            updated_facility_vertex_pairs.emplace_back(this->get_facilities().at(i), new_facilities.at(i));
+            updated_facility_vertex_pairs.emplace_back(this->facilities.at(i), new_facilities.at(i));
         }
     }
 
@@ -1488,10 +1497,10 @@ void Net_SGFLP::update_facility_and_sign_setting(const std::vector<Net_2::vertex
     bool is_sign_changed = false;
     std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_sign_vertex_pairs {};
 
-    for (size_t i {0}; i < this->get_signs().size(); ++i) {
-        if (this->get_signs().at(i) != new_signs.at(i)) {
+    for (size_t i {0}; i < this->signs.size(); ++i) {
+        if (this->signs.at(i) != new_signs.at(i)) {
             is_sign_changed = true;
-            updated_sign_vertex_pairs.emplace_back(this->get_signs().at(i), new_signs.at(i));
+            updated_sign_vertex_pairs.emplace_back(this->signs.at(i), new_signs.at(i));
         }
     }
 

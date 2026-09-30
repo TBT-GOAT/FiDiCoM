@@ -22,60 +22,14 @@ SGFLP_SA::SGFLP_SA(Net_SGFLP net_sgflp,
 //** Objective Function Method **//
 double SGFLP_SA::evaluate_function(
     const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> facilities_and_signs, 
-    const size_t mode
+    const size_t mode,
+    bool evaluate_all_demands
 ) {
-    //* サービス供給点，サインの変更を記録
-    //!generate_neighbor_functionの仕様により，原理的にはひとつしか変更はない
-    // サービス供給点の変更を記録
-    bool is_facility_changed = false;
-    std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_facility_vertex_pairs {};
-    
-    for (size_t i {0}; i < this->net_sgflp.get_facilities().size(); ++i) {
-        if (this->net_sgflp.get_facilities().at(i) != facilities_and_signs.first.at(i)) {
-            is_facility_changed = true;
-            updated_facility_vertex_pairs.push_back(
-                std::make_pair(this->net_sgflp.get_facilities().at(i), facilities_and_signs.first.at(i))
-            );
-        }
-    }
-
-    // サインの変更を記録
-    bool is_sign_changed = false;
-    std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_sign_vertex_pairs {};
-    
-    for (size_t i {0}; i < this->net_sgflp.get_signs().size(); ++i) {
-        if (this->net_sgflp.get_signs().at(i) != facilities_and_signs.second.at(i)) {
-            is_sign_changed = true;
-            updated_sign_vertex_pairs.push_back(
-                std::make_pair(this->net_sgflp.get_signs().at(i), facilities_and_signs.second.at(i))
-            );
-        }
-    }
-
-    //* ネットワークと割当の更新
-    this->net_sgflp.clear_assignments();
-    this->net_sgflp.clear_trees();
-
-    // サービス供給点の変更を反映
-    if (is_facility_changed) {
-        for (const auto& updated_facility_vertex_pair : updated_facility_vertex_pairs) {
-            this->net_sgflp.update_dummy_vertex_facilities(updated_facility_vertex_pair.first, updated_facility_vertex_pair.second);
-        }
-
-        this->net_sgflp.set_facilities(facilities_and_signs.first);
-    }
-
-    // サインの変更を反映
-    if (is_sign_changed) {
-        for (const auto& updated_sign_vertex_pair : updated_sign_vertex_pairs) {
-            this->net_sgflp.update_dummy_vertex_signs(updated_sign_vertex_pair.first, updated_sign_vertex_pair.second);
-        }
-
-        this->net_sgflp.set_signs(facilities_and_signs.second);
-    }
-
-    this->net_sgflp.build_trees(is_facility_changed, is_sign_changed, false); // 拠点は変更なし
-    this->net_sgflp.initialize_assignments();
+    // 割当の再構築
+    const auto& new_facilities = facilities_and_signs.first;
+    const auto& new_signs = facilities_and_signs.second;
+    // this->net_sgflp.rebuild_facility_and_sign_setting(new_facilities, new_signs);
+    this->net_sgflp.update_facility_and_sign_setting(new_facilities, new_signs);
 
     // 目的関数の計算
     double objective;
@@ -85,7 +39,7 @@ double SGFLP_SA::evaluate_function(
 
     std::vector<Net_2::vertex_descriptor> evaluated_demands;
 
-    if (sampling_rate >= 1.0) {
+    if (evaluate_all_demands || sampling_rate >= 1.0) {
         evaluated_demands = demands;
     } else {
         evaluated_demands.reserve(

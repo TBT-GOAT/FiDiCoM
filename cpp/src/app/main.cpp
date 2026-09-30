@@ -2854,8 +2854,8 @@ int main(int argc, char *argv[]) {
                 239,241,251,257,263,269,271,277,281,283,293,307,311,313,317,
             };
             size_t trial_num = 5;
-            std::vector<size_t> facility_nums = {0, 2, 4, 8};
-            std::vector<size_t> sign_nums = {0, 3, 9, 27};
+            std::vector<size_t> facility_nums = {2, 4, 8, 0};
+            std::vector<size_t> sign_nums = {3, 9, 27, 0};
             std::vector<double> facility_visible_ranges = {0.0, 15000.0, 30000.0, 60000.0};
             std::vector<double> sign_visible_ranges = {15000.0, 30000.0, 60000.0};
             std::vector<double> anchor_visible_ranges = {100000.0};
@@ -3200,7 +3200,7 @@ int main(int argc, char *argv[]) {
                 auto end = std::chrono::high_resolution_clock::now();
 
                 // 結果の記録
-                double cost = solver_ptr->evaluate_function(best_solution, optim_mode);
+                double cost = solver_ptr->evaluate_function(best_solution, optim_mode, true);
                 auto runtime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
                 #pragma omp critical(case19_io)

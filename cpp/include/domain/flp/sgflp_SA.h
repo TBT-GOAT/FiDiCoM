@@ -66,7 +66,8 @@ class SGFLP_SA {
          *************************************************/
         double evaluate_function(
             const std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> facilities_and_signs, 
-            const size_t mode=MODE_MINSUM
+            const size_t mode=MODE_MINSUM,
+            bool evaluate_all_demands=false
         );
 
         //** Neighbor Generation Method **//

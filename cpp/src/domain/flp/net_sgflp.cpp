@@ -6,6 +6,7 @@
 
 // include stl util
 #include "core/util/std_vector_util.h"
+#include "core/util/std_out_util.h"
 #include "core/util/random_engine.h"
 
 //** Static Member Variable **//
@@ -1074,13 +1075,12 @@ void Net_SGFLP::initialize_assignments() {
     assign_visible_facilities_to_demand();
     assign_visible_signs_to_demand();
     assign_visible_anchors_to_demand();
-
+    
     assign_facility_to_demand();
     assign_sign_to_demand();
     assign_anchor_to_demand();
-
+    
     initialize_navigation_assignment(); //TODO 構成し直すのではなく、差分更新を検討する
-
 }
 
 void Net_SGFLP::update_facility_assignment(Net_2::vertex_descriptor prev_facility_vertex, 
@@ -1189,7 +1189,7 @@ void Net_SGFLP::assign_visible_anchors_to_demand() {
 }
 
 void Net_SGFLP::add_visible_facility_from_demands(Net_2::vertex_descriptor facility) {
-    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->facility_coverage_trees[facility];
+    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->facility_coverage_trees.at(facility);
 
     // 最短経路木を反転する
     // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
@@ -1220,7 +1220,7 @@ void Net_SGFLP::add_visible_facility_from_demands(Net_2::vertex_descriptor facil
 }
 
 void Net_SGFLP::add_visible_sign_from_demands(Net_2::vertex_descriptor sign) {
-    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->sign_coverage_trees[sign];
+    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->sign_coverage_trees.at(sign);
 
     // 最短経路木を反転する
     // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
@@ -1251,7 +1251,7 @@ void Net_SGFLP::add_visible_sign_from_demands(Net_2::vertex_descriptor sign) {
 }
 
 void Net_SGFLP::add_visible_anchor_from_demands(Net_2::vertex_descriptor anchor) {
-    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->anchor_coverage_trees[anchor];
+    std::vector<std::pair<Net_2::vertex_descriptor, double>> assignment_tree = this->anchor_coverage_trees.at(anchor);
 
     // 最短経路木を反転する
     // 最短経路木上で，ある頂点に対して次に向かうべき頂点がわかるようにする
@@ -1408,6 +1408,121 @@ void Net_SGFLP::assign_navigation() {
         }
 
     }
+}
+
+void Net_SGFLP::rebuild_facility_and_sign_setting(const std::vector<Net_2::vertex_descriptor>& new_facilities,
+                                                  const std::vector<Net_2::vertex_descriptor>& new_signs) 
+{
+    //* サービス供給点，サインの変更を記録
+    // サービス供給点の変更を記録
+    bool is_facility_changed = false;
+    std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_facility_vertex_pairs {};
+    
+    for (size_t i {0}; i < this->get_facilities().size(); ++i) {
+        if (this->get_facilities().at(i) != new_facilities.at(i)) {
+            is_facility_changed = true;
+            updated_facility_vertex_pairs.push_back(
+                std::make_pair(this->get_facilities().at(i), new_facilities.at(i))
+            );
+        }
+    }
+
+    // サインの変更を記録
+    bool is_sign_changed = false;
+    std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_sign_vertex_pairs {};
+    
+    for (size_t i {0}; i < this->get_signs().size(); ++i) {
+        if (this->get_signs().at(i) != new_signs.at(i)) {
+            is_sign_changed = true;
+            updated_sign_vertex_pairs.push_back(
+                std::make_pair(this->get_signs().at(i), new_signs.at(i))
+            );
+        }
+    }
+
+    //* ネットワークと割当の再構成
+    // クリア
+    this->clear_assignments();
+    this->clear_trees();
+
+    // サービス供給点の変更を反映
+    if (is_facility_changed) {
+        for (const auto& updated_facility_vertex_pair : updated_facility_vertex_pairs) {
+            this->update_dummy_vertex_facilities(updated_facility_vertex_pair.first, updated_facility_vertex_pair.second);
+        }
+
+        this->set_facilities(new_facilities);
+    }
+
+    // サインの変更を反映
+    if (is_sign_changed) {
+        for (const auto& updated_sign_vertex_pair : updated_sign_vertex_pairs) {
+            this->update_dummy_vertex_signs(updated_sign_vertex_pair.first, updated_sign_vertex_pair.second);
+        }
+
+        this->set_signs(new_signs);
+    }
+
+    // 再構成
+    this->build_trees(is_facility_changed, is_sign_changed, false); // 拠点は変更なし
+    this->initialize_assignments();
+
+}
+
+void Net_SGFLP::update_facility_and_sign_setting(const std::vector<Net_2::vertex_descriptor>& new_facilities,
+                                                 const std::vector<Net_2::vertex_descriptor>& new_signs)
+{
+    //* サービス供給点，サインの変更を記録
+    // サービス供給点の変更を記録
+    bool is_facility_changed = false;
+    std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_facility_vertex_pairs {};
+
+    for (size_t i {0}; i < this->get_facilities().size(); ++i) {
+        if (this->get_facilities().at(i) != new_facilities.at(i)) {
+            is_facility_changed = true;
+            updated_facility_vertex_pairs.emplace_back(this->get_facilities().at(i), new_facilities.at(i));
+        }
+    }
+
+    // サインの変更を記録
+    bool is_sign_changed = false;
+    std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>> updated_sign_vertex_pairs {};
+
+    for (size_t i {0}; i < this->get_signs().size(); ++i) {
+        if (this->get_signs().at(i) != new_signs.at(i)) {
+            is_sign_changed = true;
+            updated_sign_vertex_pairs.emplace_back(this->get_signs().at(i), new_signs.at(i));
+        }
+    }
+
+    //* ネットワークと割当の更新
+    // サービス供給点の変更を反映
+    if (is_facility_changed) {
+        for (const auto& updated_pair : updated_facility_vertex_pairs) {
+            this->update_dummy_vertex_facilities(updated_pair.first, updated_pair.second);
+        }
+        this->set_facilities(new_facilities);
+    }
+
+    // サインの変更を反映
+    if (is_sign_changed) {
+        for (const auto& updated_pair : updated_sign_vertex_pairs) {
+            this->update_dummy_vertex_signs(updated_pair.first, updated_pair.second);
+        }
+        this->set_signs(new_signs);
+    }
+
+    // 更新
+    this->build_trees(is_facility_changed, is_sign_changed, false);
+
+    for (const auto& updated_pair : updated_facility_vertex_pairs) {
+        this->update_facility_assignment(updated_pair.first, updated_pair.second);
+    }
+    for (const auto& updated_pair : updated_sign_vertex_pairs) {
+        this->update_sign_assignment(updated_pair.first, updated_pair.second);
+    }
+
+    this->initialize_navigation_assignment();
 }
 
 //** Cost Function Methods **//

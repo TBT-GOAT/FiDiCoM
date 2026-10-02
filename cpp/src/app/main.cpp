@@ -2847,12 +2847,7 @@ int main(int argc, char *argv[]) {
             //* 試行するパラメータセット
             size_t optim_mode = SGFLP_SA::MODE_MINSUM;
             size_t rDn_size = 200000;               //TODO 平均エッジ長さに応じてアジャスト
-            std::vector<size_t> prepared_seeds {
-                 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73,
-                 79, 83, 89, 97,101,103,107,109,113,127,131,137,139,149,151,
-                157,163,167,173,179,181,191,193,197,199,211,223,227,229,233,
-                239,241,251,257,263,269,271,277,281,283,293,307,311,313,317,
-            };
+            const size_t rdn_seed = 17;
             size_t trial_num = 5;
             std::vector<size_t> facility_nums = {2, 4, 8, 0};
             std::vector<size_t> sign_nums = {3, 9, 27, 0};
@@ -2899,8 +2894,6 @@ int main(int argc, char *argv[]) {
 
             // スレッドごとに同一条件のランダムドロネー網を1つ準備し、全試行で再利用する
             //!rDnに依存するばらつきを測ることはできない
-            const size_t rdn_seed = prepared_seeds.front();
-            std::vector<size_t> seeds(static_cast<size_t>(thread_num), rdn_seed);
             std::vector<std::shared_ptr<Net_2>> rdn_ptrs(static_cast<size_t>(thread_num));
             #pragma omp parallel for schedule(static)
             for (int thread_id = 0; thread_id < thread_num; ++thread_id) {
@@ -3090,6 +3083,14 @@ int main(int argc, char *argv[]) {
             std::size_t executed_tasks = 0;
             auto global_start = std::chrono::steady_clock::now();
 
+            // 正常終了時のCSVサイズを完了記録に保存する。
+            auto record_completion = [](const std::string& distribution_file) {
+                std::ofstream completion_file(distribution_file + ".done", std::ios::trunc);
+                completion_file << std::filesystem::file_size(distribution_file) << '\n';
+                completion_file.close();
+                return !completion_file.fail();
+            };
+
             //* 実行
 
             // パラメータセットごとに最適化
@@ -3112,8 +3113,7 @@ int main(int argc, char *argv[]) {
                 ) = param_set;
 
                 const int thread_id = omp_get_thread_num();
-                const size_t seed = seeds.at(static_cast<size_t>(thread_id));
-                size_t solution_id {seed * 1000000};
+                const size_t seed = rdn_seed;
                 const size_t current_solution_id = seed * 1000000 + static_cast<size_t>(p_i) + 1;
 
                 // スレッドローカル乱数エンジンのシードを試行ごとに分離
@@ -3136,7 +3136,16 @@ int main(int argc, char *argv[]) {
                                                         std::to_string(trial) +
                                                         ".csv";
 
+                bool trial_complete = false;
                 if (std::filesystem::exists(current_distribution_file)) {
+                    // 完了記録とCSVサイズが一致する試行だけスキップする。記録がなければ再実行する。
+                    std::ifstream completion_file(current_distribution_file + ".done");
+                    std::uintmax_t completed_size = 0;
+                    trial_complete = (completion_file >> completed_size) &&
+                        completed_size == std::filesystem::file_size(current_distribution_file);
+                }
+
+                if (trial_complete) {
                     #pragma omp critical
                     std::cout << "Skipping facility_num=" << facility_num
                                 << ", facility_visible_range=" << facility_visible_range
@@ -3144,7 +3153,7 @@ int main(int argc, char *argv[]) {
                                 << ", sign_visible_range=" << sign_visible_range
                                 << ", anchor_visible_range=" << anchor_visible_range
                                 << ", trial=" << trial
-                                << " (already exists: " << current_distribution_file << ")" << std::endl;
+                                << " (completed: " << current_distribution_file << ")" << std::endl;
 
                     #pragma omp atomic update
                     ++finished_tasks;
@@ -3203,6 +3212,8 @@ int main(int argc, char *argv[]) {
                 double cost = solver_ptr->evaluate_function(best_solution, optim_mode, true);
                 auto runtime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
+                // 共有の集約CSVは排他区間で書き込み、全ストリームの成功状態を保存する。
+                bool summary_written = false;
                 #pragma omp critical(case19_io)
                 {
                     parameter_table
@@ -3236,24 +3247,24 @@ int main(int argc, char *argv[]) {
                     write_nodes(solution_table, solver_ptr, current_solution_id, seed, trial, "facility", best_solution.first);
                     write_nodes(solution_table, solver_ptr, current_solution_id, seed, trial, "sign", best_solution.second);
                     write_nodes(solution_table, solver_ptr, current_solution_id, seed, trial, "anchor", solver_ptr->net_sgflp.get_anchors());
+                    solution_table.flush();
+                    summary_written = parameter_table.good() && result_table.good() && solution_table.good();
                 }
 
-                std::ofstream distribution_table(output_data_folder +
-                                                    "distribution_" +
-                                                    anchor_cost_mode + "_" +
-                                                    std::to_string(facility_num) +
-                                                    "_" +
-                                                    std::to_string(facility_visible_range) +
-                                                    "_" +
-                                                    std::to_string(sign_num) +
-                                                    "_" +
-                                                    std::to_string(sign_visible_range) +
-                                                    "_" +
-                                                    std::to_string(anchor_visible_range) +
-                                                    "_" +
-                                                    std::to_string(trial) +
-                                                    ".csv");
+                // 再実行では古い完了記録を除去し、既存名のdistribution CSVを上書きする。
+                std::filesystem::remove(current_distribution_file + ".done");
+                std::ofstream distribution_table(current_distribution_file);
                 write_distribution(distribution_table, solver_ptr, current_solution_id, seed, trial);
+                distribution_table.close();
+                // 集約CSVとdistribution CSVの出力成功後だけ完了を記録する。
+                // 失敗した試行は完了数に含めず、次回の実行で再試行する。
+                if (!summary_written || distribution_table.fail() ||
+                    !record_completion(current_distribution_file)) {
+                    net_sgflp.clear();
+                    #pragma omp critical(case19_io)
+                    std::cerr << "Trial output incomplete: " << current_distribution_file << std::endl;
+                    continue;
+                }
 
                 // 設定をもとに戻す
                 net_sgflp.clear();

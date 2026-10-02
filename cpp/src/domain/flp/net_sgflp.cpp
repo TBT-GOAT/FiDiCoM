@@ -22,6 +22,7 @@ const size_t Net_SGFLP::COST_PATTERN_DoutA = 3;
 const size_t Net_SGFLP::COST_PATTERN_DoutF = 4;
 const size_t Net_SGFLP::COST_PATTERN_DoutS = 5;
 const size_t Net_SGFLP::COST_PATTERN_Duncovered = 6;
+const size_t Net_SGFLP::COST_PATTERN_Daverage = 7;
 
 //** Constructor **//
 Net_SGFLP::Net_SGFLP() : net_ptr(std::make_shared<Net_2>()) {} 
@@ -1540,7 +1541,8 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost(Net_2::vertex_descriptor dem
 }
 
 std::pair<size_t, double> Net_SGFLP::calculate_cost(Net_2::vertex_descriptor demand,
-                                                    bool knowing_closest_anchor) const {
+                                                    bool knowing_closest_anchor) const 
+{
     std::pair<bool, Net_2::vertex_descriptor> assigned_facility = this->get_assigned_facility_to_demand(demand);
     std::pair<bool, Net_2::vertex_descriptor> assigned_sign = this->get_assigned_sign_to_demand(demand);
     std::pair<bool, Net_2::vertex_descriptor> assigned_anchor = this->get_assigned_anchor_to_demand(demand);
@@ -1819,8 +1821,8 @@ std::pair<size_t, double> Net_SGFLP::calculate_average_cost_from_uncovered_deman
         );
     }
 
-    // path_pattern は最寄りの拠点に向かう場合のものに揃える
-    const size_t path_pattern = calculate_path_from_uncovered_demand(demand).first;
+    // path_pattern は平均に設定
+    const size_t path_pattern = COST_PATTERN_Daverage;
     return std::make_pair(path_pattern, total_cost / reachable_anchor_num);
     
 }

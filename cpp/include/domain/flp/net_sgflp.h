@@ -379,6 +379,7 @@ class Net_SGFLP {
         static const size_t COST_PATTERN_DoutF; // 4: 需要点 --> サービス供給点
         static const size_t COST_PATTERN_DoutS; // 5: 需要点 --> サイン --> サービス供給点 or 拠点
         static const size_t COST_PATTERN_Duncovered; // 6: 需要点 --> 拠点
+        static const size_t COST_PATTERN_Daverage; // 7: 平均
 
         //** Constructor **//
         Net_SGFLP();

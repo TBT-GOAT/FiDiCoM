@@ -96,9 +96,25 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
     // facilitiesかsignsからひとつ選んで隣接頂点に移動する
     std::vector<Net_2::vertex_descriptor> facilities = facilities_and_signs.first;
     std::vector<Net_2::vertex_descriptor> signs = facilities_and_signs.second;
+    const std::vector<Net_2::vertex_descriptor> anchors = this->net_sgflp.get_anchors();
     size_t facility_num = facilities.size();
     size_t sign_num = signs.size();
     size_t elem_num = facility_num + sign_num;
+
+    const auto available_demands_for = [&](Net_2::vertex_descriptor moving_entity) {
+        std::vector<Net_2::vertex_descriptor> available_demands;
+        available_demands.reserve(demands.size());
+        for (const auto& demand : demands) {
+            const bool occupied_by_other_entity =
+                (std::find(facilities.begin(), facilities.end(), demand) != facilities.end() && demand != moving_entity) ||
+                (std::find(signs.begin(), signs.end(), demand) != signs.end() && demand != moving_entity) ||
+                (std::find(anchors.begin(), anchors.end(), demand) != anchors.end());
+            if (!occupied_by_other_entity) {
+                available_demands.push_back(demand);
+            }
+        }
+        return available_demands;
+    };
 
     if (elem_num == 0) {
         return std::make_pair(facilities, signs);
@@ -113,6 +129,10 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
         // facilitiesから選ぶ
         target_facility_index = target_elem_index; 
         Net_2::vertex_descriptor target_facility = facilities.at(target_facility_index);
+        std::vector<Net_2::vertex_descriptor> available_demands = available_demands_for(target_facility);
+        if (available_demands.empty()) {
+            return std::make_pair(facilities, signs);
+        }
         
         std::vector<Net_2::vertex_descriptor> adjacents_to_target_facility;
         Net_2::adjacency_iterator adj_vit, adj_vit_end;
@@ -122,14 +142,14 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
             ++adj_vit
         ) {
             // ダミーでない需要点を選ぶ
-            if (find_index(demands, *adj_vit) != -1 && (*(this->net_sgflp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
+            if (find_index(available_demands, *adj_vit) != -1 && (*(this->net_sgflp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
                 adjacents_to_target_facility.push_back(*adj_vit);
             }
         }
 
         if (adjacents_to_target_facility.empty()) {
-            // fallback: demandsから選ぶ
-            adjacents_to_target_facility = demands;
+            // fallback: 他エンティティが使用していない需要点から選ぶ
+            adjacents_to_target_facility = available_demands;
         }
 
         // adjacents_to_target_facilityからランダムにひとつ選ぶ
@@ -145,6 +165,10 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
         // signsから選ぶ
         target_sign_index = target_elem_index - facility_num;
         Net_2::vertex_descriptor target_sign = signs.at(target_sign_index);
+        std::vector<Net_2::vertex_descriptor> available_demands = available_demands_for(target_sign);
+        if (available_demands.empty()) {
+            return std::make_pair(facilities, signs);
+        }
 
         std::vector<Net_2::vertex_descriptor> adjacents_to_target_sign;
         Net_2::adjacency_iterator adj_vit, adj_vit_end;
@@ -154,14 +178,14 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
             ++adj_vit
         ) {
             // ダミーでない需要点を選ぶ
-            if (find_index(demands, *adj_vit) != -1 && (*(this->net_sgflp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
+            if (find_index(available_demands, *adj_vit) != -1 && (*(this->net_sgflp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
                 adjacents_to_target_sign.push_back(*adj_vit);
             }
         }
 
         if (adjacents_to_target_sign.empty()) {
-            // fallback: demandsから選ぶ
-            adjacents_to_target_sign = demands;
+            // fallback: 他エンティティが使用していない需要点から選ぶ
+            adjacents_to_target_sign = available_demands;
         }
 
         // adjacents_to_target_signからランダムにひとつ選ぶ
@@ -186,9 +210,25 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
     // facilitiesかsignsからひとつ選んで移動する
     std::vector<Net_2::vertex_descriptor> facilities = facilities_and_signs.first;
     std::vector<Net_2::vertex_descriptor> signs = facilities_and_signs.second;
+    const std::vector<Net_2::vertex_descriptor> anchors = this->net_sgflp.get_anchors();
     size_t facility_num = facilities.size();
     size_t sign_num = signs.size();
     size_t elem_num = facility_num + sign_num;
+
+    const auto available_demands_for = [&](Net_2::vertex_descriptor moving_entity) {
+        std::vector<Net_2::vertex_descriptor> available_demands;
+        available_demands.reserve(demands.size());
+        for (const auto& demand : demands) {
+            const bool occupied_by_other_entity =
+                (std::find(facilities.begin(), facilities.end(), demand) != facilities.end() && demand != moving_entity) ||
+                (std::find(signs.begin(), signs.end(), demand) != signs.end() && demand != moving_entity) ||
+                (std::find(anchors.begin(), anchors.end(), demand) != anchors.end());
+            if (!occupied_by_other_entity) {
+                available_demands.push_back(demand);
+            }
+        }
+        return available_demands;
+    };
 
     if (elem_num == 0) {
         return std::make_pair(facilities, signs);
@@ -207,12 +247,16 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
         // facilitiesから選ぶ
         target_facility_index = target_elem_index; 
         Net_2::vertex_descriptor target_facility = facilities.at(target_facility_index);
+        std::vector<Net_2::vertex_descriptor> available_demands = available_demands_for(target_facility);
+        if (available_demands.empty()) {
+            return std::make_pair(facilities, signs);
+        }
 
         if (jump_rate_sample < jump_rate) {
             // 需要点から選ぶ
-            std::uniform_int_distribution<> demand_dist(0, demands.size() - 1);
+            std::uniform_int_distribution<> demand_dist(0, available_demands.size() - 1);
             size_t target_demand_index = demand_dist(Random_Engine::get_engine());
-            swapped_vertex = demands.at(target_demand_index);
+            swapped_vertex = available_demands.at(target_demand_index);
         } else {
             // 隣接頂点だけから選ぶ
             std::vector<Net_2::vertex_descriptor> adjacents_to_target_facility;
@@ -223,14 +267,14 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
                 ++adj_vit
             ) {
                 // ダミーでない需要点を選ぶ
-                if (find_index(demands, *adj_vit) != -1 && (*(this->net_sgflp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
+                if (find_index(available_demands, *adj_vit) != -1 && (*(this->net_sgflp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
                     adjacents_to_target_facility.push_back(*adj_vit);
                 }
             }
 
             if (adjacents_to_target_facility.empty()) {
-                // fallback: demandsから選ぶ
-                adjacents_to_target_facility = demands;
+                // fallback: 他エンティティが使用していない需要点から選ぶ
+                adjacents_to_target_facility = available_demands;
             }
 
             // adjacents_to_target_facilityからランダムにひとつ選ぶ
@@ -247,12 +291,16 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
         // signsから選ぶ
         target_sign_index = target_elem_index - facility_num;
         Net_2::vertex_descriptor target_sign = signs.at(target_sign_index);
+        std::vector<Net_2::vertex_descriptor> available_demands = available_demands_for(target_sign);
+        if (available_demands.empty()) {
+            return std::make_pair(facilities, signs);
+        }
 
         if (jump_rate_sample < jump_rate) {
             // 需要点から選ぶ
-            std::uniform_int_distribution<> demand_dist(0, demands.size() - 1);
+            std::uniform_int_distribution<> demand_dist(0, available_demands.size() - 1);
             size_t target_demand_index = demand_dist(Random_Engine::get_engine());
-            swapped_vertex = demands.at(target_demand_index);
+            swapped_vertex = available_demands.at(target_demand_index);
         } else {
             // 隣接頂点だけから選ぶ
             std::vector<Net_2::vertex_descriptor> adjacents_to_target_sign;
@@ -263,14 +311,14 @@ std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descr
                 ++adj_vit
             ) {
                 // ダミーでない需要点を選ぶ
-                if (find_index(demands, *adj_vit) != -1 && (*(this->net_sgflp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
+                if (find_index(available_demands, *adj_vit) != -1 && (*(this->net_sgflp.net_ptr))[*adj_vit]->get_is_dummy() == false) {
                     adjacents_to_target_sign.push_back(*adj_vit);
                 }
             }
 
             if (adjacents_to_target_sign.empty()) {
-                // fallback: demandsから選ぶ
-                adjacents_to_target_sign = demands;
+                // fallback: 他エンティティが使用していない需要点から選ぶ
+                adjacents_to_target_sign = available_demands;
             }
 
             // adjacents_to_target_signからランダムにひとつ選ぶ

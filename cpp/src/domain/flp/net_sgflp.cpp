@@ -4,6 +4,7 @@
 // include STL
 #include <chrono>
 #include <stdexcept>
+#include <unordered_set>
 
 // include stl util
 #include "core/util/std_vector_util.h"
@@ -645,8 +646,25 @@ std::vector<Net_2::vertex_descriptor> Net_SGFLP::search_nearest_demands(const st
 }
 
 std::vector<Net_2::vertex_descriptor> Net_SGFLP::select_demands_at_random(const size_t selected_num) {
-    // 重複無しの無作為抽出
-    return random_sampling(demands, selected_num, false);
+    // 施設・サイン・拠点が同じ頂点を共有しないよう、使用済み頂点を候補から除外する。
+    std::vector<Net_2::vertex_descriptor> available_demands;
+    available_demands.reserve(this->demands.size());
+    for (const auto& demand : this->demands) {
+        const bool already_used =
+            std::find(this->facilities.begin(), this->facilities.end(), demand) != this->facilities.end() ||
+            std::find(this->signs.begin(), this->signs.end(), demand) != this->signs.end() ||
+            std::find(this->anchors.begin(), this->anchors.end(), demand) != this->anchors.end();
+        if (!already_used) {
+            available_demands.push_back(demand);
+        }
+    }
+
+    if (selected_num > available_demands.size()) {
+        throw std::invalid_argument("Not enough unoccupied demand vertices to initialize entities.");
+    }
+
+    // 重複なしの無作為抽出
+    return random_sampling(available_demands, selected_num, false);
 }
 
 void Net_SGFLP::initialize_facilities(const std::vector<Point_2> facility_points) {
@@ -1598,7 +1616,21 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost_to_follow_signage(Net_2::ver
     Net_2::vertex_descriptor curr_vertex = demand;
     Net_2::vertex_descriptor next_entity = this->navigation_assignment.at(sign);
     Net_2::vertex_descriptor last_entity;
-    while (true) {
+    std::unordered_set<Net_2::vertex_descriptor> visited_entities;
+    const std::size_t max_navigation_steps =
+        this->facilities.size() + this->signs.size() + this->anchors.size();
+    bool reached_terminal_entity = false;
+    for (std::size_t step = 0; step < max_navigation_steps; ++step) {
+        if (next_entity == UNINITIALIZED_DUMMY_VERTEX_ENTITIES) {
+            throw std::runtime_error("Navigation assignment ends at an uninitialized entity.");
+        }
+        if (!visited_entities.insert(next_entity).second) {
+            throw std::runtime_error(
+                "Cycle detected in signage navigation assignment at entity " +
+                std::to_string(next_entity) + "."
+            );
+        }
+
         // 次のエンティティへ向かう
         const std::vector<std::pair<std::size_t, double>>* shortest_path_tree = nullptr;
         if (find_index(this->anchors, next_entity) != -1) {
@@ -1660,11 +1692,15 @@ std::pair<size_t, double> Net_SGFLP::calculate_cost_to_follow_signage(Net_2::ver
             }
 
             last_entity = next_entity;
+            reached_terminal_entity = true;
             break;
         }
 
         next_entity = this->navigation_assignment.at(next_entity);
-        
+    }
+
+    if (!reached_terminal_entity) {
+        throw std::runtime_error("Signage navigation exceeded the number of available entities.");
     }
 
     // 現在地から最後のエンティティまでの距離を加算する
@@ -1975,7 +2011,21 @@ std::pair<size_t, std::vector<Net_2::vertex_descriptor>> Net_SGFLP::calculate_pa
     Net_2::vertex_descriptor curr_vertex = demand;
     Net_2::vertex_descriptor next_entity = this->navigation_assignment.at(sign);
     Net_2::vertex_descriptor last_entity;
-    while (true) {
+    std::unordered_set<Net_2::vertex_descriptor> visited_entities;
+    const std::size_t max_navigation_steps =
+        this->facilities.size() + this->signs.size() + this->anchors.size();
+    bool reached_terminal_entity = false;
+    for (std::size_t step = 0; step < max_navigation_steps; ++step) {
+        if (next_entity == UNINITIALIZED_DUMMY_VERTEX_ENTITIES) {
+            throw std::runtime_error("Navigation assignment ends at an uninitialized entity.");
+        }
+        if (!visited_entities.insert(next_entity).second) {
+            throw std::runtime_error(
+                "Cycle detected in signage navigation assignment at entity " +
+                std::to_string(next_entity) + "."
+            );
+        }
+
         // 次のエンティティへ向かう
         const std::vector<std::pair<std::size_t, double>>* shortest_path_tree = nullptr;
         if (find_index(this->anchors, next_entity) != -1) {
@@ -2037,11 +2087,15 @@ std::pair<size_t, std::vector<Net_2::vertex_descriptor>> Net_SGFLP::calculate_pa
             }
 
             last_entity = next_entity;
+            reached_terminal_entity = true;
             break;
         }
 
         next_entity = this->navigation_assignment.at(next_entity);
-        
+    }
+
+    if (!reached_terminal_entity) {
+        throw std::runtime_error("Signage navigation exceeded the number of available entities.");
     }
 
     // 現在地から最後のエンティティまでの経路を追加する

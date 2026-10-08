@@ -3169,9 +3169,9 @@ int main(int argc, char *argv[]) {
                 net_sgflp.set_sign_visible_length(sign_visible_range);
                 net_sgflp.set_anchor_visible_length(anchor_visible_range);
                 net_sgflp.set_demands(inner_point);
+                net_sgflp.initialize_anchors(anchors); // 拠点は不変なので先に初期化
                 net_sgflp.initialize_facilities(facility_num);
                 net_sgflp.initialize_signs(sign_num);
-                net_sgflp.initialize_anchors(anchors);
                 net_sgflp.initialize_trees();
                 net_sgflp.initialize_assignments();
 
@@ -3690,9 +3690,9 @@ int main(int argc, char *argv[]) {
                     net_sgflp.set_sign_visible_length(sign_visible_range);
                     net_sgflp.set_anchor_visible_length(anchor_visible_range);
                     net_sgflp.set_demands(inner_point);
+                    net_sgflp.initialize_anchors(anchors); // 拠点は不変なので先に初期化
                     net_sgflp.initialize_facilities(facility_num);
                     net_sgflp.initialize_signs(sign_num);
-                    net_sgflp.initialize_anchors(anchors);
                     net_sgflp.initialize_trees();
                     net_sgflp.initialize_assignments();
 

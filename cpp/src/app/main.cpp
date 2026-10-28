@@ -2741,6 +2741,13 @@ int main(int argc, char *argv[]) {
             //** Sign-Guided Facility Location Planning **//
             typedef std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> Facilities_Signs_Pair;
 
+            const bool rerun_zero_facilities =
+                argc > 2 && std::string(argv[2]) == "--rerun-zero-facilities";
+            if (argc > 3 || (argc > 2 && !rerun_zero_facilities)) {
+                std::cerr << "Usage: " << argv[0] << " 19 [--rerun-zero-facilities]" << std::endl;
+                return 1;
+            }
+
             //* データフォルダの入力
             std::string data_folder_path;
             std::cout << "Enter the data folder path: ";
@@ -3077,7 +3084,17 @@ int main(int argc, char *argv[]) {
             };
 
             //* 進行状況出力
-            size_t total_tasks = parameter_sets.size(); // パラメータセット数
+            size_t total_tasks = rerun_zero_facilities
+                ? static_cast<size_t>(std::count_if(
+                    parameter_sets.begin(), parameter_sets.end(),
+                    [](const auto& parameters) { return std::get<0>(parameters) == 0; }))
+                : parameter_sets.size(); // パラメータセット数
+
+            if (rerun_zero_facilities) {
+                std::cout << "Running " << total_tasks
+                          << " corrected facility=0 trials; preserving existing results."
+                          << std::endl;
+            }
 
             std::size_t finished_tasks = 0;
             std::size_t executed_tasks = 0;
@@ -3112,12 +3129,18 @@ int main(int argc, char *argv[]) {
                     trial
                 ) = param_set;
 
+                if (rerun_zero_facilities && facility_num != 0) {
+                    continue;
+                }
+
                 const int thread_id = omp_get_thread_num();
                 const size_t seed = rdn_seed;
-                const size_t current_solution_id = seed * 1000000 + static_cast<size_t>(p_i) + 1;
+                const size_t original_solution_id = seed * 1000000 + static_cast<size_t>(p_i) + 1;
+                const size_t current_solution_id = original_solution_id +
+                    (rerun_zero_facilities ? parameter_sets.size() : 0);
 
                 // スレッドローカル乱数エンジンのシードを試行ごとに分離
-                Random_Engine::set_seed(static_cast<unsigned int>(current_solution_id));
+                Random_Engine::set_seed(static_cast<unsigned int>(original_solution_id));
 
                 // 実行済みならスキップ
                 std::string current_distribution_file = output_data_folder +
@@ -3134,6 +3157,7 @@ int main(int argc, char *argv[]) {
                                                         std::to_string(anchor_visible_range) +
                                                         "_" +
                                                         std::to_string(trial) +
+                                                        (rerun_zero_facilities ? "_facility0_fixed" : "") +
                                                         ".csv";
 
                 bool trial_complete = false;

@@ -818,7 +818,7 @@ void Net_SGFLP::initialize_visibility_distance_matrix() {
             }
 
             double visible_distance {0.0};
-            if (0 <= j && j <= this->entity_groups[0].size() - 1) {
+            if (j < facility_end) {
                 // サービス供給点
                 if (this->visible_facilities_to_demand.find(entities.at(i)) == this->visible_facilities_to_demand.end()) {
                     // いかなるサービス供給点から不可視
@@ -834,7 +834,7 @@ void Net_SGFLP::initialize_visibility_distance_matrix() {
                     }
                 }
             }
-            else if (this->entity_groups[0].size() <= j && j <= this->entity_groups[0].size() + this->entity_groups[1].size() - 1) {
+            else if (j < sign_end) {
                 // サイン
                 if (this->visible_signs_to_demand.find(entities.at(i)) == this->visible_signs_to_demand.end()) {
                     // いかなるサインから不可視
@@ -850,7 +850,7 @@ void Net_SGFLP::initialize_visibility_distance_matrix() {
                     }
                 }
             }
-            else if (this->entity_groups[0].size() + this->entity_groups[1].size() <= j && j <= this->entity_groups[0].size() + this->entity_groups[1].size() + this->entity_groups[2].size() - 1) {
+            else if (j < anchor_end) {
                 // 拠点
                 if (this->visible_anchors_to_demand.find(entities.at(i)) == this->visible_anchors_to_demand.end()) {
                     // いかなる拠点から不可視

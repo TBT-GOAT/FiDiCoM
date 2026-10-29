@@ -2763,6 +2763,7 @@ int main(int argc, char *argv[]) {
             }
             omp_set_num_threads(thread_num);
 
+            //* どのエンティティも不可視のときのコスト計算方法
             std::string anchor_cost_mode;
             do {
                 std::cout << "Select uncovered-demand anchor cost (best/average): ";
@@ -2772,6 +2773,21 @@ int main(int argc, char *argv[]) {
                 }
             } while (anchor_cost_mode != "best" && anchor_cost_mode != "average");
             const bool knowing_closest_anchor = anchor_cost_mode == "best";
+
+            //* 需要点のサンプリング方法の選択
+            std::string sampling_policy_name;
+            do {
+                std::cout << "Select demand sampling policy (fixed/resampled): ";
+                if (!(std::cin >> sampling_policy_name)) {
+                    return 1;
+                }
+                if (sampling_policy_name != "fixed" && sampling_policy_name != "resampled") {
+                    std::cerr << "Invalid option. Enter 'fixed' or 'resampled'." << std::endl;
+                }
+            } while (sampling_policy_name != "fixed" && sampling_policy_name != "resampled");
+            const auto sampling_policy = sampling_policy_name == "fixed"
+                ? SGFLP_SA::Sampling_Policy::Fixed
+                : SGFLP_SA::Sampling_Policy::Resampled;
 
             //* 入力情報の読み込み
             Polygon_2 domain;                                           // 対象領域
@@ -2789,8 +2805,8 @@ int main(int argc, char *argv[]) {
             std::string inner_point_f_path = input_data_folder + "inner_point.cin";
 
             //* 出力先の設定
-            std::string log_data_folder = data_folder_path + "/log/" + anchor_cost_mode + "/";
-            std::string output_data_folder = data_folder_path + "/output/" + anchor_cost_mode + "/";
+            std::string log_data_folder = data_folder_path + "/log/" + anchor_cost_mode + "/" + sampling_policy_name + "/";
+            std::string output_data_folder = data_folder_path + "/output/" + anchor_cost_mode + "/" + sampling_policy_name + "/";
 
             if (!std::filesystem::exists(log_data_folder)) {
                 std::filesystem::create_directories(log_data_folder);
@@ -3202,7 +3218,8 @@ int main(int argc, char *argv[]) {
                     net_sgflp,
                     0.1,
                     0.33,
-                    knowing_closest_anchor
+                    knowing_closest_anchor,
+                    sampling_policy
                 );  //TODO サンプリング率の調整
 
                 Simulated_Annealing<std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>> sa(
@@ -3833,7 +3850,6 @@ int main(int argc, char *argv[]) {
 
             break;
         }
-
         case 21: {
             //** eCAADe Presentation **//
             typedef std::pair<std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>> Facilities_Signs_Pair;
@@ -4198,6 +4214,915 @@ int main(int argc, char *argv[]) {
 
             }
 
+            break;
+        }
+
+        case 22: {
+            //** 段階的にサインを増やすSGFLP実験の準備 **//
+            if (argc > 3) {
+                std::cerr << "Usage: " << argv[0] << " 22 [resume_run_folder]" << std::endl;
+                return 1;
+            }
+
+            //* データフォルダの入力
+            std::string data_folder_path;
+            std::cout << "Enter the data folder path: ";
+            if (!(std::cin >> data_folder_path)) return 1;
+
+            //* 並列数
+            std::cout << "Enter the number of threads: ";
+            int thread_num;
+            if (!(std::cin >> thread_num)) return 1;
+            if (thread_num <= 0 || thread_num > omp_get_max_threads()) {
+                std::cerr << "Invalid number of threads. Using maximum available threads: " << omp_get_max_threads() << std::endl;
+                thread_num = omp_get_max_threads();
+            }
+            omp_set_num_threads(thread_num);
+
+            //* どのエンティティも不可視のときのコスト計算方法
+            std::string anchor_cost_mode;
+            do {
+                std::cout << "Select uncovered-demand anchor cost (best/average): ";
+                if (!(std::cin >> anchor_cost_mode)) return 1;
+                if (anchor_cost_mode != "best" && anchor_cost_mode != "average") {
+                    std::cerr << "Invalid option. Enter 'best' or 'average'." << std::endl;
+                }
+            } while (anchor_cost_mode != "best" && anchor_cost_mode != "average");
+            const bool knowing_closest_anchor = anchor_cost_mode == "best";
+
+            //* 需要点のサンプリング方法の選択
+            std::string sampling_policy_name;
+            do {
+                std::cout << "Select demand sampling policy (fixed/resampled): ";
+                if (!(std::cin >> sampling_policy_name)) {
+                    return 1;
+                }
+                if (sampling_policy_name != "fixed" && sampling_policy_name != "resampled") {
+                    std::cerr << "Invalid option. Enter 'fixed' or 'resampled'." << std::endl;
+                }
+            } while (sampling_policy_name != "fixed" && sampling_policy_name != "resampled");
+            const auto sampling_policy = sampling_policy_name == "fixed"
+                ? SGFLP_SA::Sampling_Policy::Fixed
+                : SGFLP_SA::Sampling_Policy::Resampled;
+
+            //* 入力ファイルを確認してから、ネットワーク生成に進む。
+            const std::string input_data_folder = data_folder_path + "/input/";
+            for (const auto* filename : {"domain.cin", "walls.cin", "barriers.cin", "anchors.cin", "inner_point.cin"}) {
+                std::ifstream input(input_data_folder + filename);
+                if (!input) {
+                    std::cerr << "Could not open input file: " << input_data_folder + filename << std::endl;
+                    return 1;
+                }
+            }
+
+            //* 入力データの読み込み
+            const Polygon_2 domain = Net_2::read_domain(input_data_folder + "domain.cin");
+            auto obstacles = Obstacle_2::read_obstacles(input_data_folder + "walls.cin");
+            const auto barriers = Obstacle_2::read_obstacles(input_data_folder + "barriers.cin");
+            const auto domain_segments = Obstacle_2::convert_polygon(
+                domain, false, false, true, Obstacle_2::DOMAIN_NAME);
+            obstacles.insert(obstacles.end(), barriers.begin(), barriers.end());
+            obstacles.insert(obstacles.end(), domain_segments.begin(), domain_segments.end());
+
+            std::vector<Point_2> anchors;
+            std::ifstream anchors_file(input_data_folder + "anchors.cin");
+            std::string line;
+            while (std::getline(anchors_file, line)) {
+                if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
+                std::istringstream coordinates(line);
+                double anchor_x, anchor_y;
+                if (!(coordinates >> anchor_x >> anchor_y)) {
+                    std::cerr << "Invalid anchor coordinates: " << line << std::endl;
+                    return 1;
+                }
+                anchors.emplace_back(anchor_x, anchor_y);
+            }
+            if (!anchors_file.eof() || anchors.empty()) {
+                std::cerr << "Could not read anchors or no anchors were provided." << std::endl;
+                return 1;
+            }
+
+            std::ifstream inner_point_file(input_data_folder + "inner_point.cin");
+            double inner_x, inner_y;
+            if (!(inner_point_file >> inner_x >> inner_y)) {
+                std::cerr << "Invalid inner point coordinates." << std::endl;
+                return 1;
+            }
+            const Point_2 inner_point(inner_x, inner_y);
+
+            //* case 19と同じ条件を、サイン数の少ない段階から順に並べる。
+            const size_t rDn_size = 200000;
+            const size_t rdn_seed = 17;
+            const size_t trial_num = 5;
+            const std::vector<size_t> facility_nums = {0, 2, 4, 8};
+            const std::vector<size_t> sign_nums = {0, 3, 6, 12};
+            const std::vector<double> facility_visible_ranges = {0.0, 15000.0, 30000.0, 60000.0};
+            const std::vector<double> sign_visible_ranges = {15000.0, 30000.0, 60000.0};
+            const std::vector<double> anchor_visible_ranges = {100000.0};
+
+            if (
+                trial_num == 0 || sign_nums.empty() || sign_nums.front() != 0 ||
+                std::adjacent_find(sign_nums.begin(), sign_nums.end(),
+                    [](size_t previous, size_t next) { return previous >= next; }) != sign_nums.end()
+            ) {
+                std::cerr << "Use positive trial_num and strictly increasing sign_nums starting at zero." << std::endl;
+                return 1;
+            }
+
+            /*************************************************
+             * @brief 初期解の種類を表す列挙型
+             * @enum Initialization
+             * @var Initialization::Random ランダムに初期解を生成する
+             * @var Initialization::ZeroSigns サインをすべてゼロに設定する
+             * @var Initialization::PreviousStage 前段階の解を初期解として使用する
+             * 
+             *************************************************/
+            enum class Initialization { Random, ZeroSigns, PreviousStage };
+            const auto initialization_name = [](Initialization initialization) {
+                switch (initialization) {
+                    case Initialization::Random: return "random";
+                    case Initialization::ZeroSigns: return "zero_signs";
+                    case Initialization::PreviousStage: return "previous_stage";
+                }
+                return "unknown";
+            };
+
+            //* パラメータセットの格納
+            // 施設数、サイン数、施設可視距離、サイン可視距離、拠点可視距離、試行回数、初期解の種類
+            std::vector<std::tuple<size_t, size_t, double, double, double, size_t, Initialization>> parameter_sets;
+            // 初期解ごとの試行回数は
+            // パラメータセットごとの試行回数が、たとえば、7のときは
+            // ランダム：3、サインなしからの継承：2、前段階からの継承：2
+            const size_t inheritance_trials = trial_num / 3;
+            const size_t random_trials = trial_num - 2 * inheritance_trials;
+            parameter_sets.reserve(
+                facility_nums.size() * sign_nums.size() * facility_visible_ranges.size() *
+                sign_visible_ranges.size() * anchor_visible_ranges.size() * trial_num
+            );
+
+            // サイン数を最外周に置き、前段階の全条件が次段階より先に並ぶようにする。
+            for (size_t sign_num_stage = 0; sign_num_stage < sign_nums.size(); ++sign_num_stage) {
+                const auto sign_num = sign_nums.at(sign_num_stage);
+                for (const auto facility_num : facility_nums) {
+                    const std::vector<double> facility_visible_candidates =
+                        facility_num == 0 ? std::vector<double>{-1.0} : facility_visible_ranges;
+                    const std::vector<double> sign_visible_candidates =
+                        sign_num == 0 ? std::vector<double>{-1.0} : sign_visible_ranges;
+
+                    for (const auto facility_visible_range : facility_visible_candidates) {
+                        for (const auto sign_visible_range : sign_visible_candidates) {
+                            for (const auto anchor_visible_range : anchor_visible_ranges) {
+                                for (size_t trial = 0; trial < trial_num; ++trial) {
+                                    auto initialization = Initialization::Random;
+                                    if (
+                                        trial >= random_trials &&                       // ランダムが終わっている
+                                        trial < random_trials + inheritance_trials &&   // ランダムとサイン0からの継承が終わっていない
+                                        sign_num_stage > 0                              // サインが0でない
+                                    ) {
+                                        initialization = Initialization::ZeroSigns;
+                                    } else if (
+                                        trial >= random_trials + inheritance_trials &&  // ランダムとサイン0からの継承が終わっている
+                                        sign_num_stage > 1                              // サイン0からの継承と事前継承が異なる
+                                    ) {
+                                        initialization = Initialization::PreviousStage;
+                                    }
+                                    parameter_sets.emplace_back(
+                                        facility_num, sign_num,
+                                        facility_visible_range, sign_visible_range, anchor_visible_range,
+                                        trial, initialization
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            std::cout << "Case 22 staged optimization plan (" << trial_num
+                      << " trials per condition; unavailable inheritance slots use random):" << std::endl;
+            for (const auto sign_num : sign_nums) {
+                const auto stage_trials = std::count_if(
+                    parameter_sets.begin(), parameter_sets.end(),
+                    [sign_num](const auto& parameters) { return std::get<1>(parameters) == sign_num; }
+                );
+                std::cout << "  signs=" << sign_num << ": " << stage_trials << " trials" << std::endl;
+            }
+            std::cout << "Total: " << parameter_sets.size() << " trials" << std::endl;
+            if (
+                parameter_sets.empty() || parameter_sets.size() > static_cast<size_t>(std::numeric_limits<int>::max()) ||
+                parameter_sets.size() > std::numeric_limits<unsigned int>::max() - rdn_seed * 1000000
+            ) {
+                std::cerr << "Invalid number of trials or search seeds." << std::endl;
+                return 1;
+            }
+
+            //* 結果を格納するフォルダ
+            const auto output_base = std::filesystem::path(data_folder_path) / "output" /
+                anchor_cost_mode / sampling_policy_name / "case22";
+            std::filesystem::path output_folder;
+            std::error_code output_error;
+            std::filesystem::create_directories(output_base, output_error);
+            if (output_error) {
+                std::cerr << "Could not create output folder: " << output_error.message() << std::endl;
+                return 1;
+            }
+
+            //* 実行日時でタグづけ
+            const auto run_tag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+            for (size_t suffix = 0; ; ++suffix) {
+                output_folder = output_base / ("run_" + run_tag + "_" + std::to_string(suffix));
+                if (std::filesystem::create_directory(output_folder, output_error)) break;
+                if (output_error) {
+                    std::cerr << "Could not create run folder: " << output_error.message() << std::endl;
+                    return 1;
+                }
+            }
+
+            const auto log_folder = std::filesystem::path(data_folder_path) / "log" /
+                anchor_cost_mode / sampling_policy_name / "case22" / output_folder.filename();
+            if (!std::filesystem::create_directories(log_folder, output_error)) {
+                std::cerr << "Could not create new log folder " << log_folder;
+                if (output_error) std::cerr << ": " << output_error.message();
+                std::cerr << std::endl;
+                return 1;
+            }
+
+            //* 出力ファイルの作成
+            std::ofstream parameter_table(output_folder / "parameters.csv");
+            std::ofstream result_table(output_folder / "experiment_results.csv");
+            if (!parameter_table || !result_table) {
+                std::cerr << "Could not open result tables in " << output_folder << std::endl;
+                return 1;
+            }
+            try {
+                for (auto* table : {&parameter_table, &result_table}) {
+                    table->exceptions(std::ios::failbit | std::ios::badbit);
+                    *table << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10);
+                }
+                parameter_table << 
+                    "solution_id,init_temperature,cooling_rate,max_iter,min_iter,max_no_improvement,"
+                    "mode,rDn_size,seed,trial,#facility,vis_range_facility,#sign,vis_range_sign,vis_range_anchor,"
+                    "parameter_index,search_seed,initialization,parent_solution_id,anchor_cost_mode,sampling_policy,"
+                    "jump_rate,sampling_rate,trial_num,thread_num\n";
+                result_table << 
+                    "solution_id,seed,trial,cost,runtime,initial_cost,parent_cost\n";
+                for (auto* table : {&parameter_table, &result_table}) {
+                    table->flush();
+                }
+            } catch (const std::exception& error) {
+                std::cerr << "Could not initialize result tables: " << error.what() << std::endl;
+                return 1;
+            }
+            std::cout << "Case 22 output folder: " << output_folder.string() << std::endl;
+            std::cout << "Case 22 log folder: " << log_folder.string() << std::endl;
+
+            //* 各スレッドで同じseedのランダムドロネー網を生成し、後続の全試行で再利用する。
+            std::vector<std::shared_ptr<Net_2>> rdn_ptrs(static_cast<size_t>(thread_num));
+            std::vector<std::string> network_errors(static_cast<size_t>(thread_num));
+            #pragma omp parallel for schedule(static)
+            for (int thread_id = 0; thread_id < thread_num; ++thread_id) {
+                // OpenMPの並列領域外へ例外を投げず、生成失敗は全スレッド終了後に報告する。
+                try {
+                    Random_Engine::set_seed(rdn_seed);
+                    auto& rng = Random_Engine::get_engine();
+                    rDn_2 rdn(rDn_size, domain);
+                    rdn.initialize(rng);
+                    rdn.disconnect_edges(obstacles);
+                    rdn_ptrs.at(static_cast<size_t>(thread_id)) = std::make_shared<rDn_2>(rdn);
+                } catch (const std::exception& error) {
+                    network_errors.at(static_cast<size_t>(thread_id)) = error.what();
+                } catch (...) {
+                    network_errors.at(static_cast<size_t>(thread_id)) = "Unknown network generation error";
+                }
+            }
+
+            //* 各スレッドで生成したランダムドロネー網の確認
+            for (size_t thread_id = 0; thread_id < rdn_ptrs.size(); ++thread_id) {
+                const auto& network = rdn_ptrs.at(thread_id);
+                if (!network) {
+                    std::cerr << "Network generation failed for thread " << thread_id << ": "
+                              << network_errors.at(thread_id) << std::endl;
+                    return 1;
+                }
+                std::cout << " rDn for thread " << thread_id << " (seed=" << rdn_seed
+                          << ", num_vertices=" << boost::num_vertices(*network)
+                          << ", num_edges=" << boost::num_edges(*network) << ")" << std::endl;
+            }
+
+            //* 最適化の準備完了メッセージの出力
+            std::cout << "Preparation complete: anchor_cost=" << anchor_cost_mode
+                      << ", sampling_policy=" << sampling_policy_name
+                      << ", anchors=" << anchors.size() << ", inner_point=" << inner_point << std::endl;
+
+            //* ハイパーパラメータの設定
+            using Facilities_Signs_Pair = std::pair<
+                std::vector<Net_2::vertex_descriptor>, std::vector<Net_2::vertex_descriptor>>;
+            const Simulated_Annealing_Parameters sa_parameters{
+                1.0e9,  // 初期温度
+                0.995,  // 冷却率
+                2000,   // 最大反復回数
+                1000,   // 最低反復回数
+                100     // 最大改善なし反復回数
+            };
+            const size_t optim_mode = SGFLP_SA::MODE_MINSUM;
+            const double jump_rate = 0.1;
+            const double sampling_rate = 0.33;
+            const auto solution_id_for = [rdn_seed](size_t index) {
+                return rdn_seed * 1000000 + index + 1;
+            };
+
+            //* 試行結果を保存しておくコンテナ
+            // パラメータ番号をキーに結果を保持し、後続の段階から参照できるようにする。
+            std::vector<Facilities_Signs_Pair> trial_solutions(parameter_sets.size());
+            std::vector<double> full_costs(parameter_sets.size(), std::numeric_limits<double>::infinity());
+            std::vector<std::string> trial_errors(parameter_sets.size());
+            const size_t no_parent = parameter_sets.size();
+            std::vector<size_t> parent_indices(parameter_sets.size(), no_parent);
+            std::vector<Facilities_Signs_Pair> initial_solutions(parameter_sets.size());
+            std::vector<double> initial_full_costs(parameter_sets.size(), std::numeric_limits<double>::infinity());
+            std::vector<double> runtimes(parameter_sets.size());
+            std::vector<size_t> trial_threads(parameter_sets.size());
+            std::vector<std::vector<Net_2::vertex_descriptor>> trial_anchors(parameter_sets.size());
+
+            /*************************************************
+             * @brief チェックポイントファイルを読み込む
+             * 
+             *************************************************/
+            const auto read_checkpoint_text = [](const std::filesystem::path& path) {
+                std::ifstream input(path, std::ios::binary);
+                input.exceptions(std::ios::failbit | std::ios::badbit);
+                std::ostringstream contents;
+                contents << input.rdbuf();
+                return contents.str();
+            };
+
+            //* チェックポイントを作成する
+            json checkpoint = {
+                {"version", 1}, {"completed_stages", 0}, {"trials", json::array()},
+                {"configuration", {
+                    {"rDn_size", rDn_size}, {"seed", rdn_seed}, {"trial_num", trial_num},
+                    {"thread_num", thread_num}, {"anchor_cost_mode", anchor_cost_mode},
+                    {"sampling_policy", sampling_policy_name}, {"mode", optim_mode},
+                    {"jump_rate", jump_rate}, {"sampling_rate", sampling_rate},
+                    {"sa", {sa_parameters.initial_temperature, sa_parameters.cooling_rate,
+                        sa_parameters.max_iteration, sa_parameters.min_iteration, sa_parameters.max_no_improvement}},
+                    {"parameters", json::array()}, {"inputs", json::object()}
+                }}
+            };
+
+            // パラメータセットをチェックポイントに登録する
+            for (const auto& parameters : parameter_sets) {
+                checkpoint["configuration"]["parameters"].push_back({
+                    std::get<0>(parameters), std::get<1>(parameters), std::get<2>(parameters),
+                    std::get<3>(parameters), std::get<4>(parameters), std::get<5>(parameters),
+                    initialization_name(std::get<6>(parameters))
+                });
+            }
+
+            // 入力データをチェックポイントに登録する
+            try {
+                for (const auto* filename : {"domain.cin", "walls.cin", "barriers.cin", "anchors.cin", "inner_point.cin"}) {
+                    checkpoint["configuration"]["inputs"][filename] = read_checkpoint_text(input_data_folder + filename);
+                }
+            } catch (const std::exception& error) {
+                std::cerr << "Could not snapshot experiment inputs: " << error.what() << std::endl;
+                return 1;
+            }
+
+            /*************************************************
+             * @brief チェックポイントを保存する関数
+             * 
+             * @details
+             * この関数は、現在のチェックポイントの内容をJSON形式でファイルに保存する。
+             * まず、パラメータテーブルと結果テーブルを読み込み、チェックポイントに追加する。
+             * その後、一時ファイルに書き込み、正常に書き込まれたら最終的なチェックポイントファイルにリネームする。
+             * これにより、保存中にエラーが発生しても既存のチェックポイントが破損しないようにする。
+             * 
+             *************************************************/
+            const auto save_checkpoint = [&]() {
+                checkpoint["parameter_table"] = read_checkpoint_text(output_folder / "parameters.csv");
+                checkpoint["result_table"] = read_checkpoint_text(output_folder / "experiment_results.csv");
+                std::ofstream checkpoint_file(output_folder / "checkpoint.json.tmp");
+                checkpoint_file.exceptions(std::ios::failbit | std::ios::badbit);
+                checkpoint_file << checkpoint.dump() << '\n';
+                checkpoint_file.close();
+                std::filesystem::rename(output_folder / "checkpoint.json.tmp", output_folder / "checkpoint.json");
+            };
+
+            //* チェックポイントからの再開処理を行う
+            size_t first_stage = 0;
+            try {
+                if (argc == 3) {
+                    const auto resume_folder = std::filesystem::canonical(argv[2]);
+                    auto saved_checkpoint = json::parse(read_checkpoint_text(resume_folder / "checkpoint.json"));
+                    
+                    if (saved_checkpoint.at("version") != 1 ||
+                        saved_checkpoint.at("configuration") != checkpoint.at("configuration")) {
+                        throw std::runtime_error("Checkpoint version, inputs or experiment conditions do not match");
+                    }
+                    
+                    first_stage = saved_checkpoint.at("completed_stages").get<size_t>();
+                    
+                    if (first_stage > sign_nums.size() || !saved_checkpoint.at("trials").is_array()) {
+                        throw std::runtime_error("Invalid completed stages in checkpoint");
+                    }
+                    
+                    // 完了しているステージの次にあたる試行回数から再開する
+                    const size_t saved_trial_count = std::count_if(parameter_sets.begin(), parameter_sets.end(),
+                        [&](const auto& parameters) {
+                            return first_stage == sign_nums.size() || std::get<1>(parameters) < sign_nums.at(first_stage);
+                        }
+                    );
+                    
+                    if (saved_checkpoint.at("trials").size() != saved_trial_count) {
+                        throw std::runtime_error("Checkpoint does not contain all completed stage trials");
+                    }
+                    
+                    //* 完了済みの試行結果を読み込む
+                    const auto source_logs = std::filesystem::path(data_folder_path) / "log" /
+                        anchor_cost_mode / sampling_policy_name / "case22" / resume_folder.filename();
+                    
+                        for (size_t p_i = 0; p_i < saved_trial_count; ++p_i) {
+                        const auto& saved = saved_checkpoint.at("trials").at(p_i);
+                        if (saved.at("parameter_index").get<size_t>() != p_i) {
+                            throw std::runtime_error("Invalid checkpoint trial order");
+                        }
+                        
+                        // 結果の復元
+                        trial_solutions.at(p_i) = saved.at("solution").get<Facilities_Signs_Pair>();
+                        initial_solutions.at(p_i) = saved.at("initial_solution").get<Facilities_Signs_Pair>();
+                        full_costs.at(p_i) = saved.at("cost").get<double>();
+                        initial_full_costs.at(p_i) = saved.at("initial_cost").get<double>();
+                        runtimes.at(p_i) = saved.at("runtime").get<double>();
+                        parent_indices.at(p_i) = saved.at("parent_index").get<size_t>();
+                        trial_threads.at(p_i) = saved.at("thread").get<size_t>();
+                        trial_anchors.at(p_i) = saved.at("anchors").get<std::vector<Net_2::vertex_descriptor>>();
+                        const auto& parameters = parameter_sets.at(p_i);
+                        
+                        // 不正な結果が保存されていないか確認
+                        if (!std::isfinite(full_costs.at(p_i)) || !std::isfinite(initial_full_costs.at(p_i)) ||
+                            !std::isfinite(runtimes.at(p_i)) || runtimes.at(p_i) < 0 ||
+                            trial_threads.at(p_i) >= rdn_ptrs.size() ||
+                            trial_solutions.at(p_i).first.size() != std::get<0>(parameters) ||
+                            trial_solutions.at(p_i).second.size() != std::get<1>(parameters) ||
+                            initial_solutions.at(p_i).first.size() != std::get<0>(parameters) ||
+                            initial_solutions.at(p_i).second.size() != std::get<1>(parameters)) {
+                            throw std::runtime_error("Invalid restored trial values or entity counts");
+                        }
+
+                        // 今回のランダムドロネー網と同じ物かを確認
+                        const auto& network = rdn_ptrs.at(trial_threads.at(p_i));
+                        for (const auto& coordinates : saved.at("coordinates")) {
+                            const auto vertex = coordinates.at(0).get<Net_2::vertex_descriptor>();
+                            if (vertex >= boost::num_vertices(*network) ||
+                                coordinates.at(1).get<double>() != (*network)[vertex]->x() ||
+                                coordinates.at(2).get<double>() != (*network)[vertex]->y()) {
+                                throw std::runtime_error("Restored vertex coordinates differ from current network");
+                            }
+                        }
+                        
+                        // 今回のランダムドロネー網で同じ結果が得られるか検証
+                        Net_SGFLP restored(network);
+                        try {
+                            restored.set_facility_visible_length(std::get<2>(parameters));
+                            restored.set_sign_visible_length(std::get<3>(parameters));
+                            restored.set_anchor_visible_length(std::get<4>(parameters));
+                            restored.set_demands(inner_point);
+                            restored.initialize_anchors(anchors);
+                            const auto demands = restored.get_demands();
+                            const auto points_for = [&](const auto& vertices) {
+                                std::vector<Point_2> points;
+                                for (const auto vertex : vertices) {
+                                    if (std::find(demands.begin(), demands.end(), vertex) == demands.end()) {
+                                        throw std::runtime_error("Restored entity is not a demand vertex");
+                                    }
+                                    points.emplace_back((*network)[vertex]->x(), (*network)[vertex]->y());
+                                }
+                                return points;
+                            };
+                            restored.initialize_facilities(points_for(initial_solutions.at(p_i).first));
+                            restored.initialize_signs(points_for(initial_solutions.at(p_i).second));
+                            points_for(trial_solutions.at(p_i).first);
+                            points_for(trial_solutions.at(p_i).second);
+                            if (restored.get_facilities() != initial_solutions.at(p_i).first ||
+                                restored.get_signs() != initial_solutions.at(p_i).second ||
+                                restored.get_anchors() != trial_anchors.at(p_i)) {
+                                throw std::runtime_error("Restored layout differs from checkpoint");
+                            }
+                            restored.initialize_trees();
+                            restored.initialize_assignments();
+                            SGFLP_SA solver(restored, jump_rate, sampling_rate, knowing_closest_anchor,
+                                sampling_policy, static_cast<unsigned int>(solution_id_for(p_i)));
+                            const auto matches_cost = [](double actual, double expected) {
+                                return std::isfinite(actual) && std::abs(actual - expected) <=
+                                    1.0e-12 * std::max(1.0, std::abs(expected));
+                            };
+                            if (!matches_cost(solver.evaluate_function(initial_solutions.at(p_i), optim_mode, true), initial_full_costs.at(p_i)) ||
+                                !matches_cost(solver.evaluate_function(trial_solutions.at(p_i), optim_mode, true), full_costs.at(p_i))) {
+                                throw std::runtime_error("Restored full-demand costs differ from checkpoint");
+                            }
+                            restored.clear();
+                        } catch (...) {
+                            restored.clear();
+                            throw;
+                        }
+
+                        // 対応する結果ファイルが揃っているかを確認
+                        const auto id = std::to_string(solution_id_for(p_i));
+                        for (const auto* prefix : {"solution_", "initial_solution_", "distribution_"}) {
+                            const auto filename = std::string(prefix) + id + ".csv";
+                            if (std::filesystem::file_size(resume_folder / filename) != saved.at("files").at(filename).get<uintmax_t>()) {
+                                throw std::runtime_error("Missing or truncated saved trial CSV: " + filename);
+                            }
+                            std::filesystem::copy_file(resume_folder / filename, output_folder / filename);
+                        }
+
+                        // 対応するログが残っているかを確認
+                        const auto log_name = "log_sgflp_" + id + ".cout";
+                        if (std::filesystem::file_size(source_logs / log_name) != saved.at("log_size").get<uintmax_t>()) {
+                            throw std::runtime_error("Missing or truncated saved SA log: " + log_name);
+                        }
+                        std::filesystem::copy_file(source_logs / log_name, log_folder / log_name);
+
+                    }
+
+                    // パラメータと結果をまとめる表が既存のものと整合するかを確認
+                    for (const auto& entry : {std::make_pair("parameter_table", "parameters.csv"),
+                        std::make_pair("result_table", "experiment_results.csv")}) {
+                        const auto text = saved_checkpoint.at(entry.first).get<std::string>();
+                        const auto header = read_checkpoint_text(output_folder / entry.second);
+                        if (text.compare(0, header.size(), header) != 0 ||
+                            static_cast<size_t>(std::count(text.begin(), text.end(), '\n')) != saved_trial_count + 1) {
+                            throw std::runtime_error("Invalid checkpoint summary table");
+                        }
+                        auto& table = std::string(entry.first) == "parameter_table" ? parameter_table : result_table;
+                        table.close();
+                        table.open(output_folder / entry.second);
+                        table << text;
+                        table.flush();
+                    }
+                    checkpoint = std::move(saved_checkpoint);
+                    std::cout << "Resumed " << first_stage << " completed stages (" << saved_trial_count
+                              << " trials) from " << resume_folder.string() << std::endl;
+                }
+
+                save_checkpoint();
+
+            } catch (const std::exception& error) {
+                std::cerr << "Could not initialize or restore checkpoint: " << error.what() << std::endl;
+                return 1;
+            }
+            
+            /*************************************************
+             * @brief 表にエンティティを指定して座標を追記するラムダ関数
+             * 
+             *************************************************/
+            const auto write_nodes = [&](std::ofstream& table, size_t index, const std::string& type, const auto& vertices) {
+                const auto& network = rdn_ptrs.at(trial_threads.at(index));
+                for (const auto vertex : vertices) {
+                    const auto node = (*network)[vertex];
+                    table << solution_id_for(index) << ',' << rdn_seed << ','
+                          << std::get<5>(parameter_sets.at(index)) << ',' << type << ',' << vertex << ','
+                          << node->x() << ',' << node->y() << ",0.0\n";
+                }
+            };
+
+            //* 各ステージごとにパラメータセットを処理する
+            for (size_t stage = first_stage; stage < sign_nums.size(); ++stage) {
+                const auto sign_num = sign_nums.at(stage);
+                
+                //* 当該ステージのパラメータセットのインデックスを収集する
+                std::vector<size_t> stage_indices;
+                for (size_t p_i = 0; p_i < parameter_sets.size(); ++p_i) {
+                    const auto& target = parameter_sets.at(p_i);
+                    if (std::get<1>(target) != sign_num) continue;
+                    stage_indices.push_back(p_i);
+                    const auto initialization = std::get<6>(target);
+                    if (initialization == Initialization::Random) continue;
+
+                    // 継承元のサイン数を決定する
+                    // sign_nums.front() = 0
+                    const auto parent_sign_num = initialization == Initialization::ZeroSigns
+                        ? sign_nums.front() : sign_nums.at(stage - 1);
+                    
+                    // 同条件の親候補から最良の結果を選ぶ
+                    size_t parent_count = 0;
+                    for (size_t candidate = 0; candidate < parameter_sets.size(); ++candidate) {
+                        const auto& source = parameter_sets.at(candidate);
+                        
+                        if (
+                            std::get<1>(source) != parent_sign_num ||                               // サイン数が継承元と異なる
+                            std::get<0>(source) != std::get<0>(target) ||                           // 施設数が異なる
+                            std::get<2>(source) != std::get<2>(target) ||                           // 施設の可視範囲が異なる
+                            std::get<4>(source) != std::get<4>(target) ||                           // 拠点の可視範囲が異なる
+                            (parent_sign_num != 0 && std::get<3>(source) != std::get<3>(target))    // サインの可視範囲が異なる
+                        ) continue;
+                        
+                        ++parent_count;
+                        const auto previous = parent_indices.at(p_i);
+                        if (previous == no_parent || full_costs.at(candidate) < full_costs.at(previous)) {
+                            parent_indices.at(p_i) = candidate;
+                        }
+                    }
+
+                    // 親候補が適切に選ばれたかを確認
+                    const auto expected_parents = trial_num;
+                    if (
+                        parent_count != expected_parents || parent_indices.at(p_i) == no_parent ||
+                        !std::isfinite(full_costs.at(parent_indices.at(p_i)))
+                    ) {
+                        std::cerr << "Invalid parent trials for parameter index " << p_i << std::endl;
+                        return 1;
+                    }
+                    
+                }
+
+                //* 当該ステージの解を探索する
+                std::cout << "Starting sign=" << sign_num << " stage: " << stage_indices.size()
+                          << " trials" << std::endl;
+                #pragma omp parallel for schedule(dynamic)
+                for (int stage_index = 0; stage_index < static_cast<int>(stage_indices.size()); ++stage_index) {
+                    const auto p_i = stage_indices.at(static_cast<size_t>(stage_index));
+                    const auto& parameters = parameter_sets.at(p_i);
+                    const auto facility_num = std::get<0>(parameters);
+                    const auto initialization = std::get<6>(parameters);
+                    const auto parent_index = parent_indices.at(p_i);
+                    const auto search_seed = static_cast<unsigned int>(solution_id_for(p_i));
+                    const auto thread_id = static_cast<size_t>(omp_get_thread_num());
+                    Net_SGFLP net_sgflp(rdn_ptrs.at(thread_id));
+                    try {
+                        std::ofstream log_file(log_folder / ("log_sgflp_" + std::to_string(solution_id_for(p_i)) + ".cout"));
+                        log_file.exceptions(std::ios::failbit | std::ios::badbit);
+                        log_file << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10);
+                        log_file << "# solution_id=" << solution_id_for(p_i)
+                                 << ", parameter_index=" << p_i << ", search_seed=" << search_seed
+                                 << ", initialization=" << initialization_name(initialization)
+                                 << ", parent_solution_id=";
+                        if (parent_index != no_parent) log_file << solution_id_for(parent_index);
+                        log_file << '\n' << "# anchor_cost=" << anchor_cost_mode
+                                 << ", sampling_policy=" << sampling_policy_name << ", sampling_rate=" << sampling_rate
+                                 << '\n' << "# iteration temperature best_sampled_cost current_sampled_cost duration_ms"
+                                 << " best_solution current_solution\n";
+                        Random_Engine::set_seed(search_seed);
+                        net_sgflp.set_facility_visible_length(std::get<2>(parameters));
+                        net_sgflp.set_sign_visible_length(std::get<3>(parameters));
+                        net_sgflp.set_anchor_visible_length(std::get<4>(parameters));
+                        net_sgflp.set_demands(inner_point);
+                        net_sgflp.initialize_anchors(anchors);
+
+                        if (initialization == Initialization::Random) {
+                            net_sgflp.initialize_facilities(facility_num);
+                            net_sgflp.initialize_signs(sign_num);
+                        } else {
+                            const auto& parent_solution = trial_solutions.at(parent_index);
+                            if (parent_solution.first.size() != facility_num || parent_solution.second.size() > sign_num) {
+                                throw std::runtime_error("Invalid parent layout size");
+                            }
+                            const auto demands = net_sgflp.get_demands();
+                            
+                            /*************************************************
+                             * @brief Vertex_descripter を Point_2 に変換するラムダ関数
+                             * 
+                             *************************************************/
+                            const auto points_for = [&](const std::vector<Net_2::vertex_descriptor>& vertices) {
+                                std::vector<Point_2> points;
+                                for (const auto vertex : vertices) {
+                                    if (std::find(demands.begin(), demands.end(), vertex) == demands.end()) {
+                                        throw std::runtime_error("Parent entity is not a current demand vertex");
+                                    }
+                                    const auto node = (*net_sgflp.net_ptr)[vertex];
+                                    points.emplace_back(node->x(), node->y());
+                                }
+                                return points;
+                            };
+
+                            // 施設の初期化
+                            net_sgflp.initialize_facilities(points_for(parent_solution.first));
+                            
+                            // 拠点の取得
+                            const auto anchor_vertices = net_sgflp.get_anchors();
+                            
+                            // 追加するサインの置き場所候補
+                            // すでにエンティティがある場所を避ける
+                            std::vector<Net_2::vertex_descriptor> available_demands;
+                            for (const auto demand : demands) {
+                                if (
+                                    std::find(parent_solution.first.begin(), parent_solution.first.end(), demand) == parent_solution.first.end() &&
+                                    std::find(parent_solution.second.begin(), parent_solution.second.end(), demand) == parent_solution.second.end() &&
+                                    std::find(anchor_vertices.begin(), anchor_vertices.end(), demand) == anchor_vertices.end()
+                                ) {
+                                    available_demands.push_back(demand);
+                                }
+                            }
+                            
+                            // 追加するサインの数を計算
+                            const auto additional_count = sign_num - parent_solution.second.size();
+                            if (additional_count > available_demands.size()) {
+                                throw std::runtime_error("Not enough unoccupied demands to add signs");
+                            }
+                            
+                            // サインの初期化
+                            auto sign_vertices = parent_solution.second;
+                            const auto added_signs = random_sampling(available_demands, additional_count, false);
+                            sign_vertices.insert(sign_vertices.end(), added_signs.begin(), added_signs.end());
+                            net_sgflp.initialize_signs(points_for(sign_vertices));
+                            if (net_sgflp.get_facilities() != parent_solution.first || net_sgflp.get_signs() != sign_vertices) {
+                                throw std::runtime_error("Restored entities differ from inherited layout");
+                            }
+                        }
+                        
+                        net_sgflp.initialize_trees();
+                        net_sgflp.initialize_assignments();
+                        Facilities_Signs_Pair initial_solution{
+                            net_sgflp.get_facilities(), net_sgflp.get_signs()
+                        };
+                        SGFLP_SA solver(
+                            net_sgflp, jump_rate, sampling_rate, knowing_closest_anchor,
+                            sampling_policy, search_seed
+                        );
+                        const auto initial_cost = solver.evaluate_function(initial_solution, optim_mode, true);
+                        if (!std::isfinite(initial_cost)) throw std::runtime_error("Non-finite initial full-demand cost");
+                        log_file << "# initial_full_cost=" << initial_cost << '\n';
+                        auto best_solution = initial_solution;
+                        const auto search_start = std::chrono::steady_clock::now();
+                        if (facility_num != 0 || sign_num != 0) {
+                            Simulated_Annealing<Facilities_Signs_Pair> sa(
+                                sa_parameters,
+                                [&solver, optim_mode](const Facilities_Signs_Pair& solution) {
+                                    return solver.evaluate_function(solution, optim_mode);
+                                },
+                                [&solver](const Facilities_Signs_Pair& solution) {
+                                    return solver.generate_neighbor_function_with_jump(solution);
+                                }
+                            );
+                            best_solution = sa.solve(initial_solution, false, true, &log_file);
+                        } else {
+                            log_file << "# skipped: no facilities or signs\n";
+                        }
+                        const auto search_end = std::chrono::steady_clock::now();
+                        const auto cost = solver.evaluate_function(best_solution, optim_mode, true);
+                        
+                        if (!std::isfinite(cost)) throw std::runtime_error("Non-finite full-demand cost");
+                        log_file << "# final_full_cost=" << cost << '\n';
+                        log_file.close();
+
+                        std::ofstream distribution_table(
+                            output_folder / ("distribution_" + std::to_string(solution_id_for(p_i)) + ".csv"));
+                        distribution_table.exceptions(std::ios::failbit | std::ios::badbit);
+                        distribution_table << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10);
+                        distribution_table << "solution_id,seed,trial,node_id,x,y,z,accessibility,pattern\n";
+                        for (const auto demand : solver.net_sgflp.get_demands()) {
+                            const auto accessibility = solver.net_sgflp.calculate_cost(demand, knowing_closest_anchor);
+                            if (!std::isfinite(accessibility.second)) {
+                                throw std::runtime_error("Non-finite demand cost in distribution");
+                            }
+                            const auto node = (*solver.net_sgflp.net_ptr)[demand];
+                            distribution_table << solution_id_for(p_i) << ',' << rdn_seed << ','
+                                << std::get<5>(parameters) << ',' << demand << ','
+                                << node->x() << ',' << node->y() << ",0.0,"
+                                << accessibility.second << ',' << accessibility.first << '\n';
+                        }
+                        distribution_table.close();
+                        
+                        //* 試行結果を記録する
+                        trial_anchors.at(p_i) = net_sgflp.get_anchors();
+                        net_sgflp.clear();
+                        initial_solutions.at(p_i) = std::move(initial_solution);
+                        initial_full_costs.at(p_i) = initial_cost;
+                        trial_solutions.at(p_i) = std::move(best_solution);
+                        full_costs.at(p_i) = cost;
+                        runtimes.at(p_i) = std::chrono::duration<double, std::milli>(search_end - search_start).count();
+                        trial_threads.at(p_i) = thread_id;
+
+                        #pragma omp critical(case22_progress)
+                        {
+                            std::cout << "sign=" << sign_num << ", parameter_index=" << p_i
+                                      << ", initialization=" << initialization_name(initialization)
+                                      << ", facility_num=" << facility_num
+                                      << ", facility_visible_range=" << std::get<2>(parameters)
+                                      << ", sign_visible_range=" << std::get<3>(parameters)
+                                      << ", anchor_visible_range=" << std::get<4>(parameters)
+                                      << ", trial=" << std::get<5>(parameters) << ", search_seed=" << search_seed;
+                            if (parent_index != no_parent) {
+                                std::cout << ", parent_index=" << parent_index
+                                          << ", parent_full_cost=" << std::setprecision(std::numeric_limits<double>::max_digits10)
+                                          << full_costs.at(parent_index);
+                            }
+                            std::cout << ", initial_full_cost=" << std::setprecision(std::numeric_limits<double>::max_digits10)
+                                      << initial_cost << ", full_cost=" << cost << std::endl;
+                        }
+                    } catch (const std::exception& error) {
+                        net_sgflp.clear();
+                        trial_errors.at(p_i) = error.what();
+                    } catch (...) {
+                        net_sgflp.clear();
+                        trial_errors.at(p_i) = "Unknown staged trial error";
+                    }
+                }
+
+                for (const auto p_i : stage_indices) {
+                    if (!trial_errors.at(p_i).empty() || !std::isfinite(full_costs.at(p_i))) {
+                        std::cerr << "Sign=" << sign_num << " trial failed at parameter index " << p_i << ": "
+                                  << trial_errors.at(p_i) << std::endl;
+                        return 1;
+                    }
+                }
+
+                //* ステージが終わったらパラメータセットを表に書き込む
+                try {
+                    for (const auto p_i : stage_indices) {
+                        const auto& parameters = parameter_sets.at(p_i);
+                        const auto parent_index = parent_indices.at(p_i);
+                        parameter_table << solution_id_for(p_i) << ',' << sa_parameters.initial_temperature << ','
+                            << sa_parameters.cooling_rate << ',' << sa_parameters.max_iteration << ','
+                            << sa_parameters.min_iteration << ',' << sa_parameters.max_no_improvement << ','
+                            << optim_mode << ',' << rDn_size << ',' << rdn_seed << ',' << std::get<5>(parameters) << ','
+                            << std::get<0>(parameters) << ',' << std::get<2>(parameters) << ','
+                            << std::get<1>(parameters) << ',' << std::get<3>(parameters) << ','
+                            << std::get<4>(parameters) << ',' << p_i << ',' << solution_id_for(p_i) << ','
+                            << initialization_name(std::get<6>(parameters)) << ',';
+                        if (parent_index != no_parent) parameter_table << solution_id_for(parent_index);
+                        parameter_table << ',' << anchor_cost_mode << ',' << sampling_policy_name << ','
+                            << jump_rate << ',' << sampling_rate << ',' << trial_num << ',' << thread_num << '\n';
+                        result_table << solution_id_for(p_i) << ',' << rdn_seed << ',' << std::get<5>(parameters) << ','
+                            << full_costs.at(p_i) << ',' << runtimes.at(p_i) << ',' << initial_full_costs.at(p_i) << ',';
+                        if (parent_index != no_parent) result_table << full_costs.at(parent_index);
+                        result_table << '\n';
+                        for (const bool initial : {true, false}) {
+                            const std::string prefix = initial ? "initial_solution_" : "solution_";
+                            std::ofstream table(output_folder / (prefix + std::to_string(solution_id_for(p_i)) + ".csv"));
+                            table.exceptions(std::ios::failbit | std::ios::badbit);
+                            table << std::scientific << std::setprecision(std::numeric_limits<double>::max_digits10);
+                            table << "solution_id,seed,trial,type,node_id,x,y,z\n";
+                            const auto& solution = initial ? initial_solutions.at(p_i) : trial_solutions.at(p_i);
+                            write_nodes(table, p_i, "facility", solution.first);
+                            write_nodes(table, p_i, "sign", solution.second);
+                            write_nodes(table, p_i, "anchor", trial_anchors.at(p_i));
+                            table.close();
+                        }
+                    }
+                    for (auto* table : {&parameter_table, &result_table}) {
+                        table->flush();
+                    }
+
+                    // 各試行の結果をまとめてJSONに保存
+                    for (const auto p_i : stage_indices) {
+                        json saved = {
+                            {"parameter_index", p_i}, {"solution", trial_solutions.at(p_i)},
+                            {"initial_solution", initial_solutions.at(p_i)}, {"cost", full_costs.at(p_i)},
+                            {"initial_cost", initial_full_costs.at(p_i)}, {"runtime", runtimes.at(p_i)},
+                            {"parent_index", parent_indices.at(p_i)}, {"thread", trial_threads.at(p_i)},
+                            {"anchors", trial_anchors.at(p_i)}, {"coordinates", json::array()},
+                            {"files", json::object()}
+                        };
+                        const auto& network = rdn_ptrs.at(trial_threads.at(p_i));
+                        for (const auto* vertices : {&trial_solutions.at(p_i).first, &trial_solutions.at(p_i).second,
+                            &initial_solutions.at(p_i).first, &initial_solutions.at(p_i).second, &trial_anchors.at(p_i)}) {
+                            for (const auto vertex : *vertices) {
+                                const auto node = (*network)[vertex];
+                                saved["coordinates"].push_back({vertex, node->x(), node->y()});
+                            }
+                        }
+                        const auto id = std::to_string(solution_id_for(p_i));
+                        for (const auto* prefix : {"solution_", "initial_solution_", "distribution_"}) {
+                            const auto filename = std::string(prefix) + id + ".csv";
+                            saved["files"][filename] = std::filesystem::file_size(output_folder / filename);
+                        }
+                        saved["log_size"] = std::filesystem::file_size(log_folder / ("log_sgflp_" + id + ".cout"));
+                        checkpoint["trials"].push_back(std::move(saved));
+                    }
+                    checkpoint["completed_stages"] = stage + 1;
+                    save_checkpoint();
+
+                } catch (const std::exception& error) {
+                    std::cerr << "Could not save sign=" << sign_num << " stage in " << output_folder
+                              << ": " << error.what() << std::endl;
+                    return 1;
+                }
+
+                std::cout << "Sign=" << sign_num << " stage complete: " << stage_indices.size()
+                          << " optimized layouts saved." << std::endl;
+            }
+
+            //* フラッシュして終了する
+            try {
+                for (auto* table : {&parameter_table, &result_table}) {
+                    table->close();
+                }
+                std::ofstream completion(output_folder / "completed.txt");
+                completion.exceptions(std::ios::failbit | std::ios::badbit);
+                completion << parameter_sets.size() << '\n';
+                completion.close();
+            } catch (const std::exception& error) {
+                std::error_code cleanup_error;
+                std::filesystem::remove(output_folder / "completed.txt", cleanup_error);
+                std::cerr << "Could not finalize run in " << output_folder << ": " << error.what() << std::endl;
+                return 1;
+            }
+            std::cout << "Staged optimization complete: " << parameter_sets.size()
+                      << " trials saved to " << output_folder.string()
+                      << std::endl;
             break;
         }
 

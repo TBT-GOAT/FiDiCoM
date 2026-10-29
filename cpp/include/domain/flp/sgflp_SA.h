@@ -32,6 +32,8 @@
 
 // include STL
 #include <vector>
+#include "core/util/random_engine.h"
+#include "domain/flp/demand_sampler.h"
 
 // include Net_SGFLP
 #include "domain/flp/net_sgflp.h"
@@ -40,9 +42,16 @@
 #include "core/util/std_vector_util.h"
 
 class SGFLP_SA {
+    private:
+        Demand_Sampler<Net_2::vertex_descriptor> demand_sampler; // 需要点のサンプリングを行うオブジェクト
+
     public:
+        using Sampling_Policy = Demand_Sampling_Policy;
+
         static constexpr size_t MODE_MINSUM = 0;    // ミニサムモード
         static constexpr size_t MODE_MINMAX = 1;    // ミニマックスモード
+
+        const Sampling_Policy sampling_policy; // サンプリング方法（Fixed：固定サンプリング、Resampled：再サンプリング）
 
         double jump_rate;       // 近傍解生成関数で、ジャンプする割合
         double sampling_rate;   // 評価関数で、サンプリングする割合
@@ -54,7 +63,9 @@ class SGFLP_SA {
         SGFLP_SA(Net_SGFLP net_sgflp, 
                  double jump_rate=0.1, 
                  double sampling_rate=1.0,
-                 bool knowing_closest_anchor=true);
+                 bool knowing_closest_anchor=true,
+                 Sampling_Policy sampling_policy=Sampling_Policy::Fixed,
+                 unsigned int sampling_seed=static_cast<unsigned int>(Random_Engine::get_seed()));
 
         //** Objective Function Method **//
         /*************************************************

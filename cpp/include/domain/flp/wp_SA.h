@@ -32,6 +32,8 @@
 
 // include STL
 #include <vector>
+#include "core/util/random_engine.h"
+#include "domain/flp/demand_sampler.h"
 
 // include Net_WP
 #include "domain/flp/net_wp.h"
@@ -40,9 +42,16 @@
 #include "core/util/std_vector_util.h"
 
 class WP_SA {
+    private:
+        Demand_Sampler<Net_2::vertex_descriptor> demand_sampler; // 需要点のサンプリングを行うオブジェクト
+
     public:
+        using Sampling_Policy = Demand_Sampling_Policy;
+
         static constexpr size_t MODE_MINSUM = 0;    // ミニサムモード
         static constexpr size_t MODE_MINMAX = 1;    // ミニマックスモード
+
+        const Sampling_Policy sampling_policy; // サンプリング方法（Fixed：固定サンプリング、Resampled：再サンプリング）
 
         double jump_rate;       // 近傍解生成関数で、ジャンプする割合
         double sampling_rate;   // 評価関数で、サンプリングする割合
@@ -52,7 +61,9 @@ class WP_SA {
         //** Constructor **//
         WP_SA(Net_WP net_wp, 
               double jump_rate=0.1, 
-              double sampling_rate=1.0);
+              double sampling_rate=1.0,
+              Sampling_Policy sampling_policy=Sampling_Policy::Fixed,
+              unsigned int sampling_seed=static_cast<unsigned int>(Random_Engine::get_seed()));
 
         //** Objective Function Method **//
         /*************************************************
@@ -64,7 +75,8 @@ class WP_SA {
          *************************************************/
         double evaluate_function(
             const std::vector<Net_2::vertex_descriptor> facilities, 
-            const size_t mode=MODE_MINSUM
+            const size_t mode=MODE_MINSUM,
+            bool evaluate_all_demands=false
         );
 
         //** Neighbor Generation Method **//

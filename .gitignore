@@ -4,6 +4,7 @@ build_cpp_project.sh
 debug_cpp_project.sh
 build_image.sh
 run_container.sh
+/cpp/tests
 
 # バイナリ
 build

@@ -7,15 +7,22 @@
 
 
 //** Constructor **//
-WP_SA::WP_SA(Net_WP net_wp, 
-             double jump_rate, 
-             double sampling_rate) 
-    : net_wp(std::move(net_wp)), jump_rate(jump_rate), sampling_rate(sampling_rate) {}
+WP_SA::WP_SA(Net_WP net_wp,
+             double jump_rate,
+             double sampling_rate,
+             Sampling_Policy sampling_policy,
+             unsigned int sampling_seed)
+        :   net_wp(std::move(net_wp)),
+            jump_rate(jump_rate),
+            sampling_rate(sampling_rate),
+            demand_sampler(sampling_policy, sampling_seed),
+            sampling_policy(sampling_policy) {}
 
 //** Objective Function Method **//
 double WP_SA::evaluate_function(
     const std::vector<Net_2::vertex_descriptor> facilities, 
-    const size_t mode
+    const size_t mode,
+    bool evaluate_all_demands
 ) {
     // ネットワークの更新
     this->net_wp.clear_tree();
@@ -41,22 +48,7 @@ double WP_SA::evaluate_function(
 
     // 需要点のサンプリング
     const auto& demands = this->net_wp.get_demands();
-
-    std::vector<Net_2::vertex_descriptor> evaluated_demands;
-
-    if (sampling_rate >= 1.0) {
-        evaluated_demands = demands;
-    } else {
-        evaluated_demands.reserve(
-            static_cast<size_t>(demands.size() * sampling_rate));
-
-        std::sample(
-            demands.begin(),
-            demands.end(),
-            std::back_inserter(evaluated_demands),
-            static_cast<size_t>(demands.size() * sampling_rate),
-            Random_Engine::get_engine());
-    }
+    const auto evaluated_demands = demand_sampler.sample(demands, sampling_rate, evaluate_all_demands);
 
     // 目的関数の計算
     double objective;

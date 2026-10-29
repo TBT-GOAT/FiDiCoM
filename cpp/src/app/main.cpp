@@ -3095,7 +3095,6 @@ int main(int argc, char *argv[]) {
                           << " corrected facility=0 trials; preserving existing results."
                           << std::endl;
             }
-
             std::size_t finished_tasks = 0;
             std::size_t executed_tasks = 0;
             auto global_start = std::chrono::steady_clock::now();
@@ -3168,7 +3167,6 @@ int main(int argc, char *argv[]) {
                     trial_complete = (completion_file >> completed_size) &&
                         completed_size == std::filesystem::file_size(current_distribution_file);
                 }
-
                 if (trial_complete) {
                     #pragma omp critical
                     std::cout << "Skipping facility_num=" << facility_num

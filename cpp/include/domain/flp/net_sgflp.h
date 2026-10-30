@@ -150,6 +150,19 @@ class Net_SGFLP {
          *************************************************/
         void remove_dummy_vertex_anchors();
         /*************************************************
+         * @brief ダミー頂点に接続する辺を置き換える
+         * @details 旧位置への辺をすべて削除してから、新位置への辺をすべて追加する。
+         * @warning 変更ごとに削除と追加を繰り返さないこと。[A,B] から [B,C] への更新では、
+         * A から B への変更で追加した辺も、続く B から C への変更の
+         * boost::remove_edge(dummy_vertex, B, ...) により削除される（同じ頂点間の辺はすべて削除される）。
+         * 結果、C しかダミー頂点と接続されなくなる可能性がある。
+         *
+         * @param dummy_vertex 辺を置き換える対象のダミー頂点
+         * @param changes 置き換える辺の情報（元の頂点と新しい頂点のペア）
+         *************************************************/
+        void replace_dummy_edges(Net_2::vertex_descriptor dummy_vertex,
+            const std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>>& changes);
+        /*************************************************
          * @brief サービス供給点に関連する最短経路木を構築する
          * 
          *************************************************/

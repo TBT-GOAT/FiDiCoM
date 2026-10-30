@@ -4480,6 +4480,8 @@ int main(int argc, char *argv[]) {
             //* 各スレッドで同じseedのランダムドロネー網を生成し、後続の全試行で再利用する。
             std::vector<std::shared_ptr<Net_2>> rdn_ptrs(static_cast<size_t>(thread_num));
             std::vector<std::string> network_errors(static_cast<size_t>(thread_num));
+            std::vector<std::map<double, std::vector<Net_2::vertex_descriptor>>>
+                facility_candidates(static_cast<size_t>(thread_num)); // 施設の初期位置の候補
             #pragma omp parallel for schedule(static)
             for (int thread_id = 0; thread_id < thread_num; ++thread_id) {
                 // OpenMPの並列領域外へ例外を投げず、生成失敗は全スレッド終了後に報告する。
@@ -4489,7 +4491,39 @@ int main(int argc, char *argv[]) {
                     rDn_2 rdn(rDn_size, domain);
                     rdn.initialize(rng);
                     rdn.disconnect_edges(obstacles);
-                    rdn_ptrs.at(static_cast<size_t>(thread_id)) = std::make_shared<rDn_2>(rdn);
+                    auto network = std::make_shared<rDn_2>(rdn);
+                    
+                    // 施設の初期位置の候補を生成
+                    Net_SGFLP anchor_visibility(network);
+                    anchor_visibility.set_demands(inner_point);
+                    anchor_visibility.set_anchor_visible_length(
+                        *std::max_element(anchor_visible_ranges.begin(), anchor_visible_ranges.end()));
+                    anchor_visibility.initialize_anchors(anchors);
+                    anchor_visibility.initialize_facilities(0);
+                    anchor_visibility.initialize_signs(0);
+                    anchor_visibility.initialize_trees();
+                    anchor_visibility.initialize_assignments();
+                    const auto assigned_anchors = anchor_visibility.get_anchor_assignment_to_demand();
+                    const auto anchor_vertices = anchor_visibility.get_anchors();
+                    const auto demands = anchor_visibility.get_demands();
+                    for (const auto range : anchor_visible_ranges) {
+                        auto& candidates = facility_candidates.at(static_cast<size_t>(thread_id))[range];
+                        for (const auto demand : demands) {
+                            if (std::find(anchor_vertices.begin(), anchor_vertices.end(), demand) != anchor_vertices.end()) {
+                                continue;
+                            }
+                            if (
+                                assigned_anchors.find(demand) == assigned_anchors.end() ||
+                                anchor_visibility.calculate_cost(demand).second > range
+                            ) {
+                                candidates.push_back(demand);
+                            }
+                        }
+                    }
+                    anchor_visibility.clear();
+
+                    // スレッドごとのランダムドロネー網を登録
+                    rdn_ptrs.at(static_cast<size_t>(thread_id)) = std::move(network);
                 } catch (const std::exception& error) {
                     network_errors.at(static_cast<size_t>(thread_id)) = error.what();
                 } catch (...) {
@@ -4564,6 +4598,7 @@ int main(int argc, char *argv[]) {
                     {"rDn_size", rDn_size}, {"seed", rdn_seed}, {"trial_num", trial_num},
                     {"thread_num", thread_num}, {"anchor_cost_mode", anchor_cost_mode},
                     {"sampling_policy", sampling_policy_name}, {"mode", optim_mode},
+                    {"random_facility_initialization", "outside_anchor_visibility"},
                     {"jump_rate", jump_rate}, {"sampling_rate", sampling_rate},
                     {"sa", {sa_parameters.initial_temperature, sa_parameters.cooling_rate,
                         sa_parameters.max_iteration, sa_parameters.min_iteration, sa_parameters.max_no_improvement}},
@@ -4872,8 +4907,26 @@ int main(int argc, char *argv[]) {
                         net_sgflp.initialize_anchors(anchors);
 
                         if (initialization == Initialization::Random) {
-                            net_sgflp.initialize_facilities(facility_num);
+                            
+                            // 施設の初期位置は、拠点の範囲外の中から選択
+                            const auto& candidates = facility_candidates.at(thread_id).at(std::get<4>(parameters));
+                            if (facility_num > candidates.size()) {
+                                throw std::runtime_error("Not enough demands outside anchor visibility to initialize facilities");
+                            }
+                            const auto facility_vertices = random_sampling(candidates, facility_num, false);
+                            std::vector<Point_2> facility_points;
+                            for (const auto vertex : facility_vertices) {
+                                const auto node = (*net_sgflp.net_ptr)[vertex];
+                                facility_points.emplace_back(node->x(), node->y());
+                            }
+                            net_sgflp.initialize_facilities(facility_points);
+                            if (net_sgflp.get_facilities() != facility_vertices) {
+                                throw std::runtime_error("Initialized facilities differ from selected demand vertices");
+                            }
+
+                            // サインは指定された数だけランダムな位置で初期化
                             net_sgflp.initialize_signs(sign_num);
+
                         } else {
                             const auto& parent_solution = trial_solutions.at(parent_index);
                             if (parent_solution.first.size() != facility_num || parent_solution.second.size() > sign_num) {

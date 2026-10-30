@@ -321,6 +321,19 @@ void Net_SGFLP::remove_dummy_vertex_anchors() {
     dummy_vertex_anchors = UNINITIALIZED_DUMMY_VERTEX_ANCHORS;
 }
 
+void Net_SGFLP::replace_dummy_edges(Net_2::vertex_descriptor dummy_vertex,
+    const std::vector<std::pair<Net_2::vertex_descriptor, Net_2::vertex_descriptor>>& changes) {
+    auto& network = *this->net_ptr;
+    for (const auto& change : changes) {
+        boost::remove_edge(dummy_vertex, change.first, network);
+    }
+    for (const auto& change : changes) {
+        auto edge = std::make_shared<Edge_2>(network[dummy_vertex], network[change.second]);
+        edge->set_is_dummy(true);
+        boost::add_edge(dummy_vertex, change.second, edge, network);
+    }
+}
+
 void Net_SGFLP::update_dummy_vertex_facilities(const Net_2::vertex_descriptor prev_facility_vertex, 
                                               const Net_2::vertex_descriptor next_facility_vertex) 
 {
@@ -1471,18 +1484,14 @@ void Net_SGFLP::rebuild_facility_and_sign_setting(const std::vector<Net_2::verte
 
     // サービス供給点の変更を反映
     if (is_facility_changed) {
-        for (const auto& updated_facility_vertex_pair : updated_facility_vertex_pairs) {
-            this->update_dummy_vertex_facilities(updated_facility_vertex_pair.first, updated_facility_vertex_pair.second);
-        }
+        this->replace_dummy_edges(this->dummy_vertex_facilities, updated_facility_vertex_pairs);
 
         this->set_facilities(new_facilities);
     }
 
     // サインの変更を反映
     if (is_sign_changed) {
-        for (const auto& updated_sign_vertex_pair : updated_sign_vertex_pairs) {
-            this->update_dummy_vertex_signs(updated_sign_vertex_pair.first, updated_sign_vertex_pair.second);
-        }
+        this->replace_dummy_edges(this->dummy_vertex_signs, updated_sign_vertex_pairs);
 
         this->set_signs(new_signs);
     }
@@ -1526,17 +1535,13 @@ void Net_SGFLP::update_facility_and_sign_setting(const std::vector<Net_2::vertex
     //* ネットワークと割当の更新
     // サービス供給点の変更を反映
     if (is_facility_changed) {
-        for (const auto& updated_pair : updated_facility_vertex_pairs) {
-            this->update_dummy_vertex_facilities(updated_pair.first, updated_pair.second);
-        }
+        this->replace_dummy_edges(this->dummy_vertex_facilities, updated_facility_vertex_pairs);
         this->set_facilities(new_facilities);
     }
 
     // サインの変更を反映
     if (is_sign_changed) {
-        for (const auto& updated_pair : updated_sign_vertex_pairs) {
-            this->update_dummy_vertex_signs(updated_pair.first, updated_pair.second);
-        }
+        this->replace_dummy_edges(this->dummy_vertex_signs, updated_sign_vertex_pairs);
         this->set_signs(new_signs);
     }
 
@@ -1544,10 +1549,22 @@ void Net_SGFLP::update_facility_and_sign_setting(const std::vector<Net_2::vertex
     this->build_trees(is_facility_changed, is_sign_changed, false);
 
     for (const auto& updated_pair : updated_facility_vertex_pairs) {
-        this->update_facility_assignment(updated_pair.first, updated_pair.second);
+        this->remove_visible_facility_from_demands(updated_pair.first);
+    }
+    for (const auto& updated_pair : updated_facility_vertex_pairs) {
+        this->add_visible_facility_from_demands(updated_pair.second);
+    }
+    if (is_facility_changed) {
+        this->assign_facility_to_demand();
     }
     for (const auto& updated_pair : updated_sign_vertex_pairs) {
-        this->update_sign_assignment(updated_pair.first, updated_pair.second);
+        this->remove_visible_sign_from_demands(updated_pair.first);
+    }
+    for (const auto& updated_pair : updated_sign_vertex_pairs) {
+        this->add_visible_sign_from_demands(updated_pair.second);
+    }
+    if (is_sign_changed) {
+        this->assign_sign_to_demand();
     }
 
     this->initialize_navigation_assignment();

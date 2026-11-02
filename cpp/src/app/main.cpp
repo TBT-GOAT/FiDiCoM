@@ -4314,6 +4314,7 @@ int main(int argc, char *argv[]) {
             const size_t rDn_size = 200000;
             const size_t rdn_seed = 17;
             const size_t trial_num = 5;
+            const size_t sign_initialization_candidates = 1; //TODO 候補数を増やしたほうが良いか検討
             const std::vector<size_t> facility_nums = {0, 2, 4, 8};
             const std::vector<size_t> sign_nums = {0, 3, 6, 12};
             const std::vector<double> facility_visible_ranges = {0.0, 15000.0, 30000.0, 60000.0};
@@ -4321,11 +4322,11 @@ int main(int argc, char *argv[]) {
             const std::vector<double> anchor_visible_ranges = {100000.0};
 
             if (
-                trial_num == 0 || sign_nums.empty() || sign_nums.front() != 0 ||
+                trial_num == 0 || sign_initialization_candidates == 0 || sign_nums.empty() || sign_nums.front() != 0 ||
                 std::adjacent_find(sign_nums.begin(), sign_nums.end(),
                     [](size_t previous, size_t next) { return previous >= next; }) != sign_nums.end()
             ) {
-                std::cerr << "Use positive trial_num and strictly increasing sign_nums starting at zero." << std::endl;
+                std::cerr << "Use positive trial_num and sign_initialization_candidates, and strictly increasing sign_nums starting at zero." << std::endl;
                 return 1;
             }
 
@@ -4464,7 +4465,7 @@ int main(int argc, char *argv[]) {
                     "solution_id,init_temperature,cooling_rate,max_iter,min_iter,max_no_improvement,"
                     "mode,rDn_size,seed,trial,#facility,vis_range_facility,#sign,vis_range_sign,vis_range_anchor,"
                     "parameter_index,search_seed,initialization,parent_solution_id,anchor_cost_mode,sampling_policy,"
-                    "jump_rate,sampling_rate,trial_num,thread_num\n";
+                    "jump_rate,sampling_rate,trial_num,thread_num,sign_initialization_candidates\n";
                 result_table << 
                     "solution_id,seed,trial,cost,runtime,initial_cost,parent_cost\n";
                 for (auto* table : {&parameter_table, &result_table}) {
@@ -4599,6 +4600,7 @@ int main(int argc, char *argv[]) {
                     {"thread_num", thread_num}, {"anchor_cost_mode", anchor_cost_mode},
                     {"sampling_policy", sampling_policy_name}, {"mode", optim_mode},
                     {"random_facility_initialization", "outside_anchor_visibility"},
+                    {"sign_initialization_candidates", sign_initialization_candidates},
                     {"jump_rate", jump_rate}, {"sampling_rate", sampling_rate},
                     {"sa", {sa_parameters.initial_temperature, sa_parameters.cooling_rate,
                         sa_parameters.max_iteration, sa_parameters.min_iteration, sa_parameters.max_no_improvement}},
@@ -4651,6 +4653,13 @@ int main(int argc, char *argv[]) {
                 if (argc == 3) {
                     const auto resume_folder = std::filesystem::canonical(argv[2]);
                     auto saved_checkpoint = json::parse(read_checkpoint_text(resume_folder / "checkpoint.json"));
+                    
+                    // レガシー形式（サイン配置のランダム初期化を複数検討していない）かを確認する
+                    const bool legacy_sign_initialization =
+                        !saved_checkpoint.at("configuration").contains("sign_initialization_candidates");
+                    if (legacy_sign_initialization) {
+                        saved_checkpoint.at("configuration")["sign_initialization_candidates"] = 1;
+                    }
                     
                     if (saved_checkpoint.at("version") != 1 ||
                         saved_checkpoint.at("configuration") != checkpoint.at("configuration")) {
@@ -4785,8 +4794,27 @@ int main(int argc, char *argv[]) {
                     // パラメータと結果をまとめる表が既存のものと整合するかを確認
                     for (const auto& entry : {std::make_pair("parameter_table", "parameters.csv"),
                         std::make_pair("result_table", "experiment_results.csv")}) {
-                        const auto text = saved_checkpoint.at(entry.first).get<std::string>();
+                        auto text = saved_checkpoint.at(entry.first).get<std::string>();
                         const auto header = read_checkpoint_text(output_folder / entry.second);
+                        
+                        // レガシー形式の表をアップグレードして、サイン初期化候補列を追加
+                        if (legacy_sign_initialization && std::string(entry.first) == "parameter_table") {
+                            std::istringstream legacy_table(text);
+                            std::string legacy_row;
+                            if (!std::getline(legacy_table, legacy_row) ||                                                  // ヘッダー行を読み込めなかった場合
+                                legacy_row + ",sign_initialization_candidates\n" != header ||                               // ヘッダー行が期待通りでない場合
+                                static_cast<size_t>(std::count(text.begin(), text.end(), '\n')) != saved_trial_count + 1    // 行数が期待通りでない場合
+                            ) {
+                                throw std::runtime_error("Invalid legacy checkpoint parameter table");
+                            }
+                            std::ostringstream upgraded_table;
+                            upgraded_table << header;
+                            while (std::getline(legacy_table, legacy_row)) {
+                                upgraded_table << legacy_row << ",1\n";
+                            }
+                            text = upgraded_table.str();
+                        }
+
                         if (text.compare(0, header.size(), header) != 0 ||
                             static_cast<size_t>(std::count(text.begin(), text.end(), '\n')) != saved_trial_count + 1) {
                             throw std::runtime_error("Invalid checkpoint summary table");
@@ -4906,6 +4934,7 @@ int main(int argc, char *argv[]) {
                         net_sgflp.set_demands(inner_point);
                         net_sgflp.initialize_anchors(anchors);
 
+                        std::vector<std::vector<Net_2::vertex_descriptor>> sign_layout_candidates; // サインの初期配置の候補を格納するコンテナ
                         if (initialization == Initialization::Random) {
                             
                             // 施設の初期位置は、拠点の範囲外の中から選択
@@ -4975,10 +5004,15 @@ int main(int argc, char *argv[]) {
                                 throw std::runtime_error("Not enough unoccupied demands to add signs");
                             }
                             
-                            // サインの初期化
-                            auto sign_vertices = parent_solution.second;
-                            const auto added_signs = random_sampling(available_demands, additional_count, false);
-                            sign_vertices.insert(sign_vertices.end(), added_signs.begin(), added_signs.end());
+                            // サインの初期化配置候補を生成
+                            sign_layout_candidates.reserve(sign_initialization_candidates);
+                            for (size_t candidate = 0; candidate < sign_initialization_candidates; ++candidate) {
+                                auto sign_vertices = parent_solution.second;
+                                const auto added_signs = random_sampling(available_demands, additional_count, false);
+                                sign_vertices.insert(sign_vertices.end(), added_signs.begin(), added_signs.end());
+                                sign_layout_candidates.push_back(std::move(sign_vertices));
+                            }
+                            const auto& sign_vertices = sign_layout_candidates.front(); // 一旦最初の候補で初期化しておく
                             net_sgflp.initialize_signs(points_for(sign_vertices));
                             if (net_sgflp.get_facilities() != parent_solution.first || net_sgflp.get_signs() != sign_vertices) {
                                 throw std::runtime_error("Restored entities differ from inherited layout");
@@ -4994,8 +5028,31 @@ int main(int argc, char *argv[]) {
                             net_sgflp, jump_rate, sampling_rate, knowing_closest_anchor,
                             sampling_policy, search_seed
                         );
-                        const auto initial_cost = solver.evaluate_function(initial_solution, optim_mode, true);
+                        auto initial_cost = solver.evaluate_function(initial_solution, optim_mode, true);
                         if (!std::isfinite(initial_cost)) throw std::runtime_error("Non-finite initial full-demand cost");
+                        
+                        // サインの初期配置を候補の中から選択する
+                        if (!sign_layout_candidates.empty()) {
+                            log_file << "# sign_initialization_candidate=0, full_cost=" << initial_cost << '\n';
+                            for (size_t candidate = 1; candidate < sign_layout_candidates.size(); ++candidate) {
+                                Facilities_Signs_Pair candidate_solution{
+                                    initial_solution.first, sign_layout_candidates.at(candidate)
+                                };
+                                const auto candidate_cost = solver.evaluate_function(candidate_solution, optim_mode, true);
+                                if (!std::isfinite(candidate_cost)) {
+                                    throw std::runtime_error("Non-finite sign initialization candidate cost");
+                                }
+                                log_file << "# sign_initialization_candidate=" << candidate
+                                         << ", full_cost=" << candidate_cost << '\n';
+                                if (candidate_cost < initial_cost) {
+                                    initial_solution = std::move(candidate_solution);
+                                    initial_cost = candidate_cost;
+                                }
+                            }
+                            initial_cost = solver.evaluate_function(initial_solution, optim_mode, true);
+                            if (!std::isfinite(initial_cost)) throw std::runtime_error("Non-finite selected initial cost");
+                        }
+
                         log_file << "# initial_full_cost=" << initial_cost << '\n';
                         auto best_solution = initial_solution;
                         const auto search_start = std::chrono::steady_clock::now();
@@ -5097,7 +5154,8 @@ int main(int argc, char *argv[]) {
                             << initialization_name(std::get<6>(parameters)) << ',';
                         if (parent_index != no_parent) parameter_table << solution_id_for(parent_index);
                         parameter_table << ',' << anchor_cost_mode << ',' << sampling_policy_name << ','
-                            << jump_rate << ',' << sampling_rate << ',' << trial_num << ',' << thread_num << '\n';
+                            << jump_rate << ',' << sampling_rate << ',' << trial_num << ',' << thread_num << ','
+                            << sign_initialization_candidates << '\n';
                         result_table << solution_id_for(p_i) << ',' << rdn_seed << ',' << std::get<5>(parameters) << ','
                             << full_costs.at(p_i) << ',' << runtimes.at(p_i) << ',' << initial_full_costs.at(p_i) << ',';
                         if (parent_index != no_parent) result_table << full_costs.at(parent_index);

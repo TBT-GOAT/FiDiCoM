@@ -4313,8 +4313,8 @@ int main(int argc, char *argv[]) {
             //* case 19と同じ条件を、サイン数の少ない段階から順に並べる。
             const size_t rDn_size = 200000;
             const size_t rdn_seed = 17;
-            const size_t trial_num = 5;
-            const size_t sign_initialization_candidates = 1; //TODO 候補数を増やしたほうが良いか検討
+            const size_t trial_num = 9;
+            const size_t sign_initialization_candidates = 10; //TODO 候補数を増やしたほうが良いか検討
             const std::vector<size_t> facility_nums = {0, 2, 4, 8};
             const std::vector<size_t> sign_nums = {0, 3, 6, 12};
             const std::vector<double> facility_visible_ranges = {0.0, 15000.0, 30000.0, 60000.0};

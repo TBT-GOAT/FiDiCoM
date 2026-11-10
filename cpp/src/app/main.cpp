@@ -4314,7 +4314,7 @@ int main(int argc, char *argv[]) {
             const size_t rDn_size = 200000;
             const size_t rdn_seed = 17;
             const size_t trial_num = 9;
-            const size_t sign_initialization_candidates = 10; //TODO 候補数を増やしたほうが良いか検討
+            const size_t randomized_initialization_candidate_count = 10; //TODO 候補数を増やしたほうが良いか検討
             const std::vector<size_t> facility_nums = {0, 2, 4, 8};
             const std::vector<size_t> sign_nums = {0, 3, 6, 12};
             const std::vector<double> facility_visible_ranges = {0.0, 15000.0, 30000.0, 60000.0};
@@ -4322,11 +4322,11 @@ int main(int argc, char *argv[]) {
             const std::vector<double> anchor_visible_ranges = {100000.0};
 
             if (
-                trial_num == 0 || sign_initialization_candidates == 0 || sign_nums.empty() || sign_nums.front() != 0 ||
+                trial_num == 0 || randomized_initialization_candidate_count == 0 || sign_nums.empty() || sign_nums.front() != 0 ||
                 std::adjacent_find(sign_nums.begin(), sign_nums.end(),
                     [](size_t previous, size_t next) { return previous >= next; }) != sign_nums.end()
             ) {
-                std::cerr << "Use positive trial_num and sign_initialization_candidates, and strictly increasing sign_nums starting at zero." << std::endl;
+                std::cerr << "Use positive trial_num and randomized_initialization_candidate_count, and strictly increasing sign_nums starting at zero." << std::endl;
                 return 1;
             }
 
@@ -4465,7 +4465,7 @@ int main(int argc, char *argv[]) {
                     "solution_id,init_temperature,cooling_rate,max_iter,min_iter,max_no_improvement,"
                     "mode,rDn_size,seed,trial,#facility,vis_range_facility,#sign,vis_range_sign,vis_range_anchor,"
                     "parameter_index,search_seed,initialization,parent_solution_id,anchor_cost_mode,sampling_policy,"
-                    "jump_rate,sampling_rate,trial_num,thread_num,sign_initialization_candidates\n";
+                    "jump_rate,sampling_rate,trial_num,thread_num,randomized_initialization_candidate_count\n";
                 result_table << 
                     "solution_id,seed,trial,cost,runtime,initial_cost,parent_cost\n";
                 for (auto* table : {&parameter_table, &result_table}) {
@@ -4600,7 +4600,7 @@ int main(int argc, char *argv[]) {
                     {"thread_num", thread_num}, {"anchor_cost_mode", anchor_cost_mode},
                     {"sampling_policy", sampling_policy_name}, {"mode", optim_mode},
                     {"random_facility_initialization", "outside_anchor_visibility"},
-                    {"sign_initialization_candidates", sign_initialization_candidates},
+                    {"randomized_initialization_candidate_count", randomized_initialization_candidate_count},
                     {"jump_rate", jump_rate}, {"sampling_rate", sampling_rate},
                     {"sa", {sa_parameters.initial_temperature, sa_parameters.cooling_rate,
                         sa_parameters.max_iteration, sa_parameters.min_iteration, sa_parameters.max_no_improvement}},
@@ -4654,11 +4654,22 @@ int main(int argc, char *argv[]) {
                     const auto resume_folder = std::filesystem::canonical(argv[2]);
                     auto saved_checkpoint = json::parse(read_checkpoint_text(resume_folder / "checkpoint.json"));
                     
-                    // レガシー形式（サイン配置のランダム初期化を複数検討していない）かを確認する
-                    const bool legacy_sign_initialization =
-                        !saved_checkpoint.at("configuration").contains("sign_initialization_candidates");
-                    if (legacy_sign_initialization) {
-                        saved_checkpoint.at("configuration")["sign_initialization_candidates"] = 1;
+                    // 過去のチェックポイント形式でないかを確認する
+                    auto& saved_configuration = saved_checkpoint.at("configuration");
+                    const bool legacy_randomized_initialization_candidate_count =
+                        !saved_configuration.contains("randomized_initialization_candidate_count") &&
+                        !saved_configuration.contains("initialization_candidates") &&
+                        !saved_configuration.contains("sign_initialization_candidates");
+                    if (saved_configuration.contains("initialization_candidates")) {
+                        saved_configuration["randomized_initialization_candidate_count"] =
+                            saved_configuration.at("initialization_candidates");
+                        saved_configuration.erase("initialization_candidates");
+                    } else if (saved_configuration.contains("sign_initialization_candidates")) {
+                        saved_configuration["randomized_initialization_candidate_count"] =
+                            saved_configuration.at("sign_initialization_candidates");
+                        saved_configuration.erase("sign_initialization_candidates");
+                    } else if (legacy_randomized_initialization_candidate_count) {
+                        saved_configuration["randomized_initialization_candidate_count"] = 1;
                     }
                     
                     if (saved_checkpoint.at("version") != 1 ||
@@ -4798,21 +4809,43 @@ int main(int argc, char *argv[]) {
                         const auto header = read_checkpoint_text(output_folder / entry.second);
                         
                         // レガシー形式の表をアップグレードして、サイン初期化候補列を追加
-                        if (legacy_sign_initialization && std::string(entry.first) == "parameter_table") {
+                        if (std::string(entry.first) == "parameter_table") {
                             std::istringstream legacy_table(text);
                             std::string legacy_row;
-                            if (!std::getline(legacy_table, legacy_row) ||                                                  // ヘッダー行を読み込めなかった場合
-                                legacy_row + ",sign_initialization_candidates\n" != header ||                               // ヘッダー行が期待通りでない場合
-                                static_cast<size_t>(std::count(text.begin(), text.end(), '\n')) != saved_trial_count + 1    // 行数が期待通りでない場合
-                            ) {
-                                throw std::runtime_error("Invalid legacy checkpoint parameter table");
+                            if (!std::getline(legacy_table, legacy_row)) {
+                                throw std::runtime_error("Invalid checkpoint parameter table header");
                             }
-                            std::ostringstream upgraded_table;
-                            upgraded_table << header;
-                            while (std::getline(legacy_table, legacy_row)) {
-                                upgraded_table << legacy_row << ",1\n";
+                            if (legacy_randomized_initialization_candidate_count) {
+                                if (legacy_row + ",randomized_initialization_candidate_count\n" != header ||
+                                    static_cast<size_t>(std::count(text.begin(), text.end(), '\n')) != saved_trial_count + 1) {
+                                    throw std::runtime_error("Invalid legacy checkpoint parameter table");
+                                }
+                                std::ostringstream upgraded_table;
+                                upgraded_table << header;
+                                while (std::getline(legacy_table, legacy_row)) {
+                                    upgraded_table << legacy_row << ",1\n";
+                                }
+                                text = upgraded_table.str();
+                            } else if (legacy_row + "\n" != header) {
+                                const std::vector<std::string> old_candidate_columns = {
+                                    "initialization_candidates", "sign_initialization_candidates"
+                                };
+                                const auto old_column = std::find_if(
+                                    old_candidate_columns.begin(), old_candidate_columns.end(),
+                                    [&](const auto& column) {
+                                        return legacy_row.size() >= column.size() &&
+                                            legacy_row.compare(legacy_row.size() - column.size(), column.size(), column) == 0;
+                                    }
+                                );
+                                if (old_column == old_candidate_columns.end()) {
+                                    throw std::runtime_error("Invalid checkpoint parameter table header");
+                                }
+                                legacy_row.replace(
+                                    legacy_row.size() - old_column->size(), old_column->size(),
+                                    "randomized_initialization_candidate_count"
+                                );
+                                text.replace(0, text.find('\n'), legacy_row);
                             }
-                            text = upgraded_table.str();
                         }
 
                         if (text.compare(0, header.size(), header) != 0 ||
@@ -4934,57 +4967,66 @@ int main(int argc, char *argv[]) {
                         net_sgflp.set_demands(inner_point);
                         net_sgflp.initialize_anchors(anchors);
 
-                        std::vector<std::vector<Net_2::vertex_descriptor>> sign_layout_candidates; // サインの初期配置の候補を格納するコンテナ
+                        std::vector<Facilities_Signs_Pair> initial_layout_candidates;
+                        const auto demands = net_sgflp.get_demands();
+                        const auto anchor_vertices = net_sgflp.get_anchors();
+                        
+                        /*************************************************
+                         * @brief vertex_descriptor を Point_2 に変換するラムダ関数                         * 
+                         *************************************************/
+                        const auto points_for = [&](const std::vector<Net_2::vertex_descriptor>& vertices) {
+                            std::vector<Point_2> points;
+                            for (const auto vertex : vertices) {
+                                if (std::find(demands.begin(), demands.end(), vertex) == demands.end()) {
+                                    throw std::runtime_error("Entity is not a current demand vertex");
+                                }
+                                const auto node = (*net_sgflp.net_ptr)[vertex];
+                                points.emplace_back(node->x(), node->y());
+                            }
+                            return points;
+                        };
+
                         if (initialization == Initialization::Random) {
-                            
-                            // 施設の初期位置は、拠点の範囲外の中から選択
+                            // 施設・サインの初期位置の候補を生成
                             const auto& candidates = facility_candidates.at(thread_id).at(std::get<4>(parameters));
                             if (facility_num > candidates.size()) {
                                 throw std::runtime_error("Not enough demands outside anchor visibility to initialize facilities");
                             }
-                            const auto facility_vertices = random_sampling(candidates, facility_num, false);
-                            std::vector<Point_2> facility_points;
-                            for (const auto vertex : facility_vertices) {
-                                const auto node = (*net_sgflp.net_ptr)[vertex];
-                                facility_points.emplace_back(node->x(), node->y());
-                            }
-                            net_sgflp.initialize_facilities(facility_points);
-                            if (net_sgflp.get_facilities() != facility_vertices) {
-                                throw std::runtime_error("Initialized facilities differ from selected demand vertices");
+
+                            initial_layout_candidates.reserve(randomized_initialization_candidate_count);
+                            for (size_t candidate = 0; candidate < randomized_initialization_candidate_count; ++candidate) {
+                                // 施設の初期位置を生成
+                                const auto facility_vertices = random_sampling(candidates, facility_num, false);
+                                
+                                // 施設がない場所に、サインの初期位置を生成
+                                std::vector<Net_2::vertex_descriptor> available_demands;
+                                for (const auto demand : demands) {
+                                    if (
+                                        std::find(facility_vertices.begin(), facility_vertices.end(), demand) == facility_vertices.end() &&
+                                        std::find(anchor_vertices.begin(), anchor_vertices.end(), demand) == anchor_vertices.end()
+                                    ) {
+                                        available_demands.push_back(demand);
+                                    }
+                                }
+                                const auto sign_vertices = random_sampling(available_demands, sign_num, false);
+                                
+                                // 初期解を登録
+                                initial_layout_candidates.emplace_back(facility_vertices, sign_vertices);
                             }
 
-                            // サインは指定された数だけランダムな位置で初期化
-                            net_sgflp.initialize_signs(sign_num);
+                            // 初期解の施設・サインの位置をネットワークに反映
+                            const auto& [facility_vertices, sign_vertices] = initial_layout_candidates.front();
+                            net_sgflp.initialize_facilities(points_for(facility_vertices));
+                            net_sgflp.initialize_signs(points_for(sign_vertices));
+                            if (net_sgflp.get_facilities() != facility_vertices || net_sgflp.get_signs() != sign_vertices) {
+                                throw std::runtime_error("Initialized entities differ from selected demand vertices");
+                            }
 
                         } else {
                             const auto& parent_solution = trial_solutions.at(parent_index);
                             if (parent_solution.first.size() != facility_num || parent_solution.second.size() > sign_num) {
                                 throw std::runtime_error("Invalid parent layout size");
                             }
-                            const auto demands = net_sgflp.get_demands();
-                            
-                            /*************************************************
-                             * @brief Vertex_descripter を Point_2 に変換するラムダ関数
-                             * 
-                             *************************************************/
-                            const auto points_for = [&](const std::vector<Net_2::vertex_descriptor>& vertices) {
-                                std::vector<Point_2> points;
-                                for (const auto vertex : vertices) {
-                                    if (std::find(demands.begin(), demands.end(), vertex) == demands.end()) {
-                                        throw std::runtime_error("Parent entity is not a current demand vertex");
-                                    }
-                                    const auto node = (*net_sgflp.net_ptr)[vertex];
-                                    points.emplace_back(node->x(), node->y());
-                                }
-                                return points;
-                            };
-
-                            // 施設の初期化
-                            net_sgflp.initialize_facilities(points_for(parent_solution.first));
-                            
-                            // 拠点の取得
-                            const auto anchor_vertices = net_sgflp.get_anchors();
-                            
                             // 追加するサインの置き場所候補
                             // すでにエンティティがある場所を避ける
                             std::vector<Net_2::vertex_descriptor> available_demands;
@@ -5004,17 +5046,18 @@ int main(int argc, char *argv[]) {
                                 throw std::runtime_error("Not enough unoccupied demands to add signs");
                             }
                             
-                            // サインの初期化配置候補を生成
-                            sign_layout_candidates.reserve(sign_initialization_candidates);
-                            for (size_t candidate = 0; candidate < sign_initialization_candidates; ++candidate) {
+                            // 既存配置を保ち、追加するサインだけを変えた初期配置候補を生成
+                            initial_layout_candidates.reserve(randomized_initialization_candidate_count);
+                            for (size_t candidate = 0; candidate < randomized_initialization_candidate_count; ++candidate) {
                                 auto sign_vertices = parent_solution.second;
                                 const auto added_signs = random_sampling(available_demands, additional_count, false);
                                 sign_vertices.insert(sign_vertices.end(), added_signs.begin(), added_signs.end());
-                                sign_layout_candidates.push_back(std::move(sign_vertices));
+                                initial_layout_candidates.emplace_back(parent_solution.first, std::move(sign_vertices));
                             }
-                            const auto& sign_vertices = sign_layout_candidates.front(); // 一旦最初の候補で初期化しておく
+                            const auto& [facility_vertices, sign_vertices] = initial_layout_candidates.front();
+                            net_sgflp.initialize_facilities(points_for(facility_vertices));
                             net_sgflp.initialize_signs(points_for(sign_vertices));
-                            if (net_sgflp.get_facilities() != parent_solution.first || net_sgflp.get_signs() != sign_vertices) {
+                            if (net_sgflp.get_facilities() != facility_vertices || net_sgflp.get_signs() != sign_vertices) {
                                 throw std::runtime_error("Restored entities differ from inherited layout");
                             }
                         }
@@ -5031,18 +5074,19 @@ int main(int argc, char *argv[]) {
                         auto initial_cost = solver.evaluate_function(initial_solution, optim_mode, true);
                         if (!std::isfinite(initial_cost)) throw std::runtime_error("Non-finite initial full-demand cost");
                         
-                        // サインの初期配置を候補の中から選択する
-                        if (!sign_layout_candidates.empty()) {
-                            log_file << "# sign_initialization_candidate=0, full_cost=" << initial_cost << '\n';
-                            for (size_t candidate = 1; candidate < sign_layout_candidates.size(); ++candidate) {
+                        // 全候補の初期配置を評価し、最もコストの低いものを選択する
+                        if (!initial_layout_candidates.empty()) {
+                            log_file << "# initialization_candidate=0, full_cost=" << initial_cost << '\n';
+                            for (size_t candidate = 1; candidate < initial_layout_candidates.size(); ++candidate) {
                                 Facilities_Signs_Pair candidate_solution{
-                                    initial_solution.first, sign_layout_candidates.at(candidate)
+                                    initial_layout_candidates.at(candidate).first,
+                                    initial_layout_candidates.at(candidate).second
                                 };
                                 const auto candidate_cost = solver.evaluate_function(candidate_solution, optim_mode, true);
                                 if (!std::isfinite(candidate_cost)) {
-                                    throw std::runtime_error("Non-finite sign initialization candidate cost");
+                                    throw std::runtime_error("Non-finite initialization candidate cost");
                                 }
-                                log_file << "# sign_initialization_candidate=" << candidate
+                                log_file << "# initialization_candidate=" << candidate
                                          << ", full_cost=" << candidate_cost << '\n';
                                 if (candidate_cost < initial_cost) {
                                     initial_solution = std::move(candidate_solution);
@@ -5155,7 +5199,7 @@ int main(int argc, char *argv[]) {
                         if (parent_index != no_parent) parameter_table << solution_id_for(parent_index);
                         parameter_table << ',' << anchor_cost_mode << ',' << sampling_policy_name << ','
                             << jump_rate << ',' << sampling_rate << ',' << trial_num << ',' << thread_num << ','
-                            << sign_initialization_candidates << '\n';
+                            << randomized_initialization_candidate_count << '\n';
                         result_table << solution_id_for(p_i) << ',' << rdn_seed << ',' << std::get<5>(parameters) << ','
                             << full_costs.at(p_i) << ',' << runtimes.at(p_i) << ',' << initial_full_costs.at(p_i) << ',';
                         if (parent_index != no_parent) result_table << full_costs.at(parent_index);
